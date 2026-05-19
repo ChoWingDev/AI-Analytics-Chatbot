@@ -133,3 +133,6 @@ build/
 
 # Optional: keep example env file tracked
 !.env.example
+
+# Exclude generated figures
+figures/

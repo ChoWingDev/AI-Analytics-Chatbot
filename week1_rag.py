@@ -1,15 +1,17 @@
 import os
+import pickle   
 from dotenv import load_dotenv
 from unstructured.partition.pdf import partition_pdf
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Load environment variables from a .env file
 load_dotenv()
 
-def load_and_parse_pdfs(folder="data/reports"):
+def load_and_parse_pdfs(folder="data/tests"):
     """
     Load all PDF files from `folder`, parse them with unstructured.partition.pdf,
     convert parsed elements with text into langchain_core Document objects,
@@ -30,7 +32,7 @@ def load_and_parse_pdfs(folder="data/reports"):
             # - extract_image_block_types includes images and tables as blocks.
             elements = partition_pdf(
                 filename=filepath,
-                strategy="hi_res",
+                strategy="fast",
                 infer_table_structure=True,
                 extract_image_block_types=["Image", "Table"]
             )
@@ -57,6 +59,26 @@ def load_and_parse_pdfs(folder="data/reports"):
     # Summary log and return collected documents
     print(f"Total elements extracted: {len(all_docs)}")
     return all_docs
+
+# Save parsed documents to a pickle file
+def save_parsed_documents(documents, filename="data/parsed_docs.pkl"):
+    """Save parsed documents so no need to re-parse PDFs every time."""
+    os.makedirs("data", exist_ok=True)
+    with open(filename, "wb") as f:
+        pickle.dump(documents, f)
+    print(f"Parsed documents saved to {filename}")
+
+# Load previously saved parsed documents
+def load_parsed_documents(filename="data/parsed_docs.pkl"):
+    """Load previously parsed documents."""
+    if os.path.exists(filename):
+        with open(filename, "rb") as f:
+            docs = pickle.load(f)
+        print(f"Loaded {len(docs)} pre-parsed documents from {filename}")
+        return docs
+    else:
+        print("No saved documents found. Running parsing first.")
+        return None
 
 def create_vectorstore(documents):
     """
@@ -110,7 +132,12 @@ def create_vectorstore(documents):
                 # keep parent industry if present (default to "ecommerce")
                 "industry": parent.metadata.get("industry") if parent.metadata else "ecommerce"
             })
-            child_docs.append(child.copy_with_metadata(meta))
+
+            new_child = Document(
+                page_content=child.page_content,
+                metadata=meta
+            )
+            child_docs.append(new_child)
 
     print(f"Created {len(child_docs)} child chunks (final units to embed)")
 
@@ -133,5 +160,15 @@ def create_vectorstore(documents):
 
 # Run it if executed as a script
 if __name__ == "__main__":
-    docs = load_and_parse_pdfs()
-    vectorstore = create_vectorstore(docs)
+    docs = load_parsed_documents()
+
+    if docs is None:
+        docs = load_and_parse_pdfs()
+        save_parsed_documents(docs)
+
+    if len(docs) == 0:
+        print("No documents available.")
+    else:
+        # Test only the vectorstore part
+        vectorstore = create_vectorstore(docs)
+        print("\nVector store creation completed!")

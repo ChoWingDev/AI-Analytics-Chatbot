@@ -5,13 +5,12 @@ from unstructured.partition.pdf import partition_pdf
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # Load environment variables from a .env file
 load_dotenv()
 
-def load_and_parse_pdfs(folder="data/tests"):
+def load_and_parse_pdfs(folder="data/reports"):
     """
     Load all PDF files from `folder`, parse them with unstructured.partition.pdf,
     convert parsed elements with text into langchain_core Document objects,
@@ -54,8 +53,6 @@ def load_and_parse_pdfs(folder="data/tests"):
                         metadata=metadata
                     ))
         
-        break # only for testing: stops after the first file (remove in production)
-    
     # Summary log and return collected documents
     print(f"Total elements extracted: {len(all_docs)}")
     return all_docs

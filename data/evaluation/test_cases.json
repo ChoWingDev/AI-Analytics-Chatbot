@@ -1,0 +1,27 @@
+[
+  {
+    "question": "What is the total revenue in 2021",
+    "expected_sql": "\nSELECT \n    ROUND(SUM(order_revenue),2) AS total_revenue \nFROM mart_order_summary\nWHERE strftime('%Y', order_created_at)='2021' AND order_returned_at IS NULL;\n",
+    "generated_sql": "\nSELECT\n    ROUND(SUM(order_revenue), 2) AS total_revenue\nFROM mart_order_summary\nWHERE strftime('%Y', order_created_at)='2021'\n  AND order_returned_at IS NULL;\n"
+  },
+  {
+    "question": "What are the top 5 product categories by revenue in 202101?",
+    "expected_sql": "\nSELECT \n    category,\n    ROUND(SUM(gross_sales),2) AS total_revenue \nFROM mart_product_sales\nWHERE strftime('%Y%m', order_date) = '202101'\nGROUP BY category\nORDER BY total_revenue DESC\nLIMIT 5;\n",
+    "generated_sql": "\nSELECT \n    category,\n    ROUND(SUM(gross_sales),2) AS total_revenue \nFROM mart_product_sales\nWHERE strftime('%Y%m', order_date) = '202101'\nGROUP BY category\nORDER BY total_revenue DESC;\n"
+  },
+  {
+    "question": "How many active users purchased in the last 90 days?",
+    "expected_sql": "\nSELECT \n    COUNT(DISTINCT user_id) AS active_users \nFROM mart_user_segment\nWHERE customer_segment != \"Inactive Users\" AND recency <= '90';\n",
+    "generated_sql": "\nSELECT \n    COUNT(DISTINCT user_id) AS active_users \nFROM mart_user_segment\nWHERE customer_segment != \"Inactive Users\";\n"
+  },
+  {
+    "question": "What is the average order value in 2021? ",
+    "expected_sql": "\n    SELECT SUM(gross_sales)/SUM(total_orders)\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2021'\n",
+    "generated_sql": "\n    SELECT SUM(gross_sales)/SUM(total_orders)\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2021'\n"
+  },
+  {
+    "question": "What is the return rate in 2022?",
+    "expected_sql": "\n    SELECT (SUM(returned_units) * 1.0) / SUM(units_sold) AS return_rate\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2022';\n",
+    "generated_sql": "\n    SELECT SUM(returned_units) AS return_rate\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2022';\n"
+  }
+]

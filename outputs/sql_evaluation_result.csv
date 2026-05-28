@@ -1,0 +1,3 @@
+passed,reason,question,expected_shape,generated_shape
+True,Result matched,What is the total revenue in 2021,,
+False,Shape mismatch,What are the top 5 product categories by revenue in 202101?,"(5, 2)","(26, 2)"

@@ -12,7 +12,7 @@ import pickle
 from unstructured.partition.pdf import partition_pdf
 from langchain_core.documents import Document
 
-from config import (
+from .config import (
     REPORTS_FOLDER,
     PARSED_DOCS_FILE,
     COMPANY_KEYWORDS,

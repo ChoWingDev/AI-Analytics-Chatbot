@@ -10,7 +10,7 @@ from typing import Optional, List
 from langchain_core.language_models.llms import LLM
 from huggingface_hub import InferenceClient
 
-from config import LLM_MODEL_ID
+from .config import LLM_MODEL_ID
 
 
 class HFInferenceLLM(LLM):

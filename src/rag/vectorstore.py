@@ -12,7 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from config import (
+from .config import (
     CHROMA_DIR,
     CHROMA_COLLECTION,
     EMBEDDING_MODEL,

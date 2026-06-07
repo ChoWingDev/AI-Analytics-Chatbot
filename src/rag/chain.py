@@ -10,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-from llm import get_llm
+from .llm import get_llm
 
 
 def format_docs(docs: list[Document]) -> str:

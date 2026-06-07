@@ -10,11 +10,11 @@ Run from the project root with: python -m src.rag.main
 import os
 from dotenv import load_dotenv
 
-from .parsing    import load_and_parse_pdfs, save_parsed_documents, load_parsed_documents
+from .parsing import load_and_parse_pdfs, save_parsed_documents, load_parsed_documents
 from .vectorstore import create_vectorstore, load_vectorstore, rebuild_child_docs
-from .retrieval  import create_retriever
-from .chain      import build_rag_chain
-from .config     import CHROMA_DIR
+from .retrieval import create_retriever
+from .chain import build_rag_chain
+from .config import CHROMA_DIR
 
 load_dotenv()
 
@@ -36,24 +36,28 @@ def run_queries(vectorstore, child_docs):
 
     test_cases = [
         # (label, question, year_filter, doc_type_filter)
+
+        # All docs — questions grounded in what the corpus actually contains
         ("All docs",
-         "What were the key ecommerce growth trends reported?",
+         "What are the main reasons customers abandon their shopping carts?",
          None, None),
 
         ("All docs",
-         "What strategies are companies using to grow ecommerce sales?",
+         "What was Aritzia revenue and how did it grow year over year?",
          None, None),
 
         ("All docs",
          "What are the main reasons customers abandon their shopping carts?",
          None, None),
 
-        ("Industry benchmarks only",
-         "What is the average ecommerce conversion rate according to industry data?",
-         None, "industry_benchmark"),
+        # Company reports only — strategy and performance questions
+        ("Company reports only",
+         "What cybersecurity data privacy or technology risks does Zara or Lululemon mention?",
+         None, "company_report"),
 
+        # Most recent year — what's new
         (f"Year {most_recent_year} only",
-         f"What were the most significant ecommerce developments in {most_recent_year}?",
+         f"What were the most significant ecommerce developments reported in {most_recent_year}?",
          most_recent_year, None),
     ]
 

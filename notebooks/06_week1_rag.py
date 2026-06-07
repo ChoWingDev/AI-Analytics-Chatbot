@@ -1,11 +1,17 @@
 import os
-import pickle   
+import pickle
 from dotenv import load_dotenv
 from unstructured.partition.pdf import partition_pdf
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.language_models.llms import LLM
+from huggingface_hub import InferenceClient
+from typing import Optional, List
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -156,8 +162,136 @@ def create_vectorstore(documents):
     print("Two-level vector store created")
     return vectorstore
 
+
+def load_vectorstore():
+    """
+    Load an existing Chroma vector store from disk without re-embedding.
+    Used to skip the expensive embedding step on subsequent runs.
+    """
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vectorstore = Chroma(
+        collection_name="ecommerce_reports",
+        embedding_function=embeddings,
+        persist_directory="./chroma_db"
+    )
+    print("Loaded existing vector store from ./chroma_db")
+    return vectorstore
+
+class HFInferenceLLM(LLM):
+    """
+    Minimal LangChain-compatible LLM that calls HuggingFace's chat_completion
+    endpoint directly via InferenceClient.
+    """
+    model_id: str
+    hf_token: str
+    max_new_tokens: int = 512
+    temperature: float = 0.1
+ 
+    @property
+    def _llm_type(self) -> str:
+        return "hf_inference_client"
+ 
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs) -> str:
+        # LLM base class converts the prompt value to a plain string before _call,
+        # so we receive a clean string here ready to send as a chat message.
+        client = InferenceClient(token=self.hf_token)
+        response = client.chat_completion(
+            model=self.model_id,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+        )
+        return response.choices[0].message.content
+
+def build_rag_chain(vectorstore):
+    """
+    Build a simple RAG chain:
+      retriever → prompt → LLM → answer
+
+    Design decisions:
+    - k=5: retrieve 5 child chunks; enough context without overloading the prompt.
+    - Prompt instructs the LLM to cite source + page so answers are traceable.
+    - Hallucination guard: LLM is told to say "I don't know" if context is insufficient,
+      preventing it from making up industry statistics.
+    - Uses Mistral-7B via HuggingFace Inference API.
+    """
+    # Retriever: convert vectorstore into a callable that returns top-k relevant chunks
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+
+    # RAG prompt: inject retrieved context + user question into the LLM
+    prompt = ChatPromptTemplate.from_template("""
+            You are an ecommerce industry analyst assistant.
+            Answer the question using ONLY the context below.
+            If the context does not contain enough information, say "I don't have enough data in the loaded reports to answer this confidently."
+            Always cite the source document and page number when referencing specific data.
+
+            Context:
+            {context}
+
+            Question: {question}
+
+            Answer:"""
+                                              )
+
+    # LLM: Mistral-7B via HuggingFace Inference API 
+    # HuggingFaceEndpoint streams tokens from HF's hosted inference servers.
+    llm = HFInferenceLLM(
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        hf_token=os.getenv("HF_TOKEN"),
+    )
+
+    def format_docs(docs):
+        """
+        Format retrieved chunks into a single string for the prompt.
+        Each chunk includes its source file and page for citation purposes.
+        """
+        formatted = []
+        for doc in docs:
+            source = doc.metadata.get("source", "unknown")
+            page = doc.metadata.get("page", "?")
+            formatted.append(f"[Source: {source}, Page: {page}]\n{doc.page_content}")
+        return "\n\n---\n\n".join(formatted)
+
+    # Chain: retrieve → format → prompt → LLM → parse to string
+    rag_chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    return rag_chain
+
+
+def run_test_queries(rag_chain):
+    """
+    Week 1 deliverable: prove the RAG chain can answer industry benchmark questions.
+    These are the 5 test questions that confirm the system is working end-to-end.
+    """
+    test_questions = [
+        "What was lululemon's ecommerce revenue or net revenue?",
+        "What was Aritzia's revenue growth in 2024?",
+        "What are Zara's key growth strategies?",
+        "What risks does Aritzia identify in its business?",
+        "How many stores does Zara operate?",
+    ]
+
+
+    print("\n" + "=" * 60)
+    print("WEEK 1 DELIVERABLE — RAG Chain Test")
+    print("=" * 60)
+
+    for i, question in enumerate(test_questions, 1):
+        print(f"\nQ{i}: {question}")
+        print("-" * 40)
+        answer = rag_chain.invoke(question)
+        print(f"A: {answer}")
+        print()
+
+
 # Run it if executed as a script
 if __name__ == "__main__":
+    # ── Step 1: Load or parse documents ──────────────────────────────
     docs = load_parsed_documents()
 
     if docs is None:
@@ -165,8 +299,16 @@ if __name__ == "__main__":
         save_parsed_documents(docs)
 
     if len(docs) == 0:
-        print("No documents available.")
+        print("No documents available. Add PDFs to data/reports/ and try again.")
     else:
-        # Test only the vectorstore part
-        vectorstore = create_vectorstore(docs)
-        print("\nVector store creation completed")
+        # ── Step 2: Build or load vector store ───────────────────────
+        # If chroma_db already exists on disk, load it (saves re-embedding time).
+        # Otherwise, create it fresh from the parsed documents.
+        if os.path.exists("./chroma_db"):
+            vectorstore = load_vectorstore()
+        else:
+            vectorstore = create_vectorstore(docs)
+
+        # ── Step 3: Build RAG chain and run test queries ──────────────
+        rag_chain = build_rag_chain(vectorstore)
+        run_test_queries(rag_chain)

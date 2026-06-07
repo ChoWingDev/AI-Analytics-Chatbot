@@ -28,7 +28,7 @@ CHILD_CHUNK_OVERLAP  = 50
 # PDF classification — used by parsing.py to tag doc_type metadata.
 # Add company names here as you add more annual reports to the corpus.
 COMPANY_KEYWORDS = [
-    "annual", "report", "10-k", "10k", "earnings",
+    "annual", "10-k", "10k", "earnings",
     "lululemon", "aritzia", "zara", "inditex",
 ]
 BENCHMARK_KEYWORDS = [

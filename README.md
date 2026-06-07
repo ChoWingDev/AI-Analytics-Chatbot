@@ -73,6 +73,17 @@ Instead of directly generating SQL from raw database schemas, the pipeline retri
 
 before prompting the LLM.
 
+Current implementation includes:
+
+- KPI glossary retrieval
+- business metric mapping
+- preferred source selection
+- time period identification
+- prompt construction
+- SQL execution validation
+
+Advanced vector-based retrieval and document retrieval capabilities are planned in future development phases.
+
 This architecture improves:
 
 * business consistency
@@ -138,15 +149,15 @@ The project uses SQLite as the analytical warehouse layer.
 
 Structured marts were designed to support downstream AI analytics querying and KPI standardization.
 
-## Current Analytics Marts
+## Implemented Analytics Marts
 
-| Mart               | Purpose                                      |
-| ------------------ | -------------------------------------------- |
-| mart_daily_sales   | Daily revenue & order KPIs                   |
-| mart_order_summary | Order-level profitability & delivery metrics |
-| mart_product_sales | Product/category sales aggregation           |
-| mart_user_summary  | Customer-level purchase behavior             |
-| mart_user_segment  | Lifecycle & segmentation analytics           |
+| Mart | Purpose |
+|--------|---------|
+| mart_daily_sales | Daily sales and revenue reporting |
+| mart_order_summary | Order-level profitability and fulfillment metrics |
+| mart_product_sales | Product and category performance analytics |
+| mart_user_summary | Customer purchasing behaviour |
+| mart_user_segment | Customer lifecycle segmentation |
 
 ---
 
@@ -154,7 +165,7 @@ Structured marts were designed to support downstream AI analytics querying and K
 
 A custom SQL evaluation framework was developed to benchmark and validate AI-generated SQL queries against predefined business ground truth logic.
 
-## Features
+## Current Evaluation Features
 
 * Ground truth SQL benchmarking
 * Result-based SQL validation
@@ -164,6 +175,7 @@ A custom SQL evaluation framework was developed to benchmark and validate AI-gen
 * JSON / CSV evaluation export
 * SQL execution error tracing
 * Semantic business logic validation
+* Required SQL pattern checking (in progress)
 
 ---
 
@@ -200,10 +212,12 @@ A benchmark dataset was manually created to evaluate Text-to-SQL performance acr
 * return analysis
 * profitability analysis
 
-Each benchmark case contains:
+Each benchmark case may contain:
 
 * natural language question
+* business metric mapping
 * expected SQL
+* required SQL checks
 * generated SQL
 * evaluation results
 

@@ -6,6 +6,12 @@
       "category": "sql",
       "expected_metrics": [
         "revenue"
+      ],
+      "required_sql_checks": [
+        "uses_completed_order_filter",
+        "uses_revenue_metric",
+        "uses_last_month_filter",
+        "uses_mart_order_summary_or_orders_order_items_fallback"
       ]
     },
     {
@@ -15,24 +21,44 @@
       "expected_metrics": [
         "roi"
       ],
-      "notes": "Glossary defines ROI as product/order profitability ROI, not paid-media ROI. ROAS/CAC are not directly calculable without spend data."
+      "notes": "Glossary defines ROI as product/order profitability ROI, not paid-media ROI. ROAS/CAC are not directly calculable without spend data.",
+      "required_sql_checks": [
+        "uses_roi_formula_gross_profit_over_order_cost",
+        "uses_completed_order_filter",
+        "uses_last_month_filter",
+        "checks_email_attribution_availability",
+        "does_not_use_roas_or_marketing_spend_without_spend_table"
+      ]
     },
     {
       "question": "How many new users did we acquire last month?",
-      "ground_truth": "Count of new customers whose first completed order occurred last month. Use mart_user_segment.first_order_date if available, filtered by glossary time_periods.last_month. Fallback: derive MIN(orders.created_at) per user where status = 'Complete'.",
+      "ground_truth": "Count of new customers whose first completed order occurred last month. Use mart_user_summary.first_order_date if available, filtered by glossary time_periods.last_month. Fallback: derive MIN(orders.created_at) per user where status = 'Complete'.",
       "category": "sql",
       "expected_metrics": [
         "new_customers"
+      ],
+      "required_sql_checks": [
+        "uses_first_completed_order_date",
+        "uses_last_month_filter",
+        "counts_distinct_users",
+        "uses_mart_user_segment_or_orders_fallback"
       ]
     },
     {
       "question": "What is the churn rate for organic search users?",
-      "ground_truth": "Churn rate for organic users: percentage of eligible users with at least one completed order before the evaluation date whose latest completed order is older than the default inactivity window, usually 90 days. Use mart_user_segment if it contains customer_segment/last_order_date/completed_order_count; fallback to orders. Apply organic traffic_source only if user/order attribution to events traffic_source = 'Organic' is available; otherwise state that organic-source churn is not directly attributable from orders alone.",
+      "ground_truth": "Churn rate for organic users: percentage of eligible users with at least one completed order before the evaluation date whose latest completed order is older than the default inactivity window, usually 90 days. Use mart_user_summary if it contains customer_type/last_order_date/frequency; fallback to orders. Apply organic traffic_source only if user/order attribution to events traffic_source = 'Organic' is available; otherwise state that organic-source churn is not directly attributable from orders alone.",
       "category": "sql",
       "expected_metrics": [
         "churn_rate"
       ],
-      "notes": "Glossary churn_rate is inactivity-based, not cancelled-order percentage."
+      "notes": "Glossary churn_rate is inactivity-based, not cancelled-order percentage.",
+      "required_sql_checks": [
+        "uses_inactivity_based_churn_definition",
+        "uses_default_90_day_churn_window",
+        "uses_completed_order_history",
+        "checks_organic_traffic_attribution_availability",
+        "does_not_treat_cancelled_or_returned_orders_as_churn"
+      ]
     },
     {
       "question": "Which product category has the highest AOV?",
@@ -40,6 +66,13 @@
       "category": "sql",
       "expected_metrics": [
         "AOV"
+      ],
+      "required_sql_checks": [
+        "uses_aov_formula_revenue_over_distinct_orders",
+        "uses_completed_order_filter",
+        "groups_by_product_category",
+        "orders_by_aov_desc",
+        "limits_to_top_1"
       ]
     },
     {
@@ -48,6 +81,13 @@
       "category": "sql",
       "expected_metrics": [
         "conversion_rate"
+      ],
+      "required_sql_checks": [
+        "uses_events_as_primary_source",
+        "groups_by_traffic_source",
+        "uses_distinct_sessions_denominator",
+        "uses_converted_sessions_numerator",
+        "does_not_calculate_from_orders_only_without_session_mapping"
       ]
     },
     {
@@ -56,6 +96,14 @@
       "category": "sql",
       "expected_metrics": [
         "revenue"
+      ],
+      "required_sql_checks": [
+        "uses_completed_order_filter",
+        "uses_revenue_metric",
+        "uses_last_quarter_filter",
+        "groups_by_product",
+        "orders_by_revenue_desc",
+        "limits_to_top_5"
       ]
     },
     {
@@ -64,6 +112,12 @@
       "category": "sql",
       "expected_metrics": [
         "returned_orders"
+      ],
+      "required_sql_checks": [
+        "uses_returned_order_definition",
+        "uses_last_month_filter",
+        "counts_distinct_orders",
+        "uses_return_status_or_returned_at"
       ]
     },
     {
@@ -72,6 +126,12 @@
       "category": "sql",
       "expected_metrics": [
         "delivery_time"
+      ],
+      "required_sql_checks": [
+        "uses_completed_or_delivered_order_filter",
+        "requires_delivered_at_not_null",
+        "uses_delivery_time_formula_julianday_delivered_minus_created",
+        "uses_avg_aggregation"
       ]
     },
     {
@@ -82,6 +142,13 @@
         "revenue",
         "returning_customers",
         "repeat_purchase_rate"
+      ],
+      "required_sql_checks": [
+        "uses_completed_order_filter",
+        "defines_returning_customers_as_more_than_one_completed_order",
+        "uses_revenue_share_formula",
+        "uses_total_completed_revenue_denominator",
+        "uses_returning_customer_revenue_numerator"
       ]
     },
     {
@@ -171,6 +238,7 @@
     "updated_based_on": "glossary.json",
     "sql_dialect": "SQLite",
     "design_principle": "mart/view-first semantic layer; use base tables only when no suitable mart/view exists.",
-    "note": "Ground truth descriptions are aligned to glossary metric definitions, preferred sources, status filters, and calculability notes."
+    "note": "Ground truth descriptions are aligned to glossary metric definitions, preferred sources, status filters, and calculability notes.",
+    "required_sql_checks_note": "SQL cases include required_sql_checks for structural validation of generated SQL, such as required filters, grouping, formulas, and calculability safeguards."
   }
 }

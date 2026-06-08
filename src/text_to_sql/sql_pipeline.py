@@ -3,13 +3,14 @@ from prompt_builder import PromptBuilder
 from sql_generator import SQLGenerator
 from sql_executor import SQLExecutor
 from sql_evaluator import evaluate_sql
+from config import GLOSSARY_PATH, DB_PATH
 
 class TextToSQLPipeline:
     def __init__(self, glossary_path, db_path):
-        self.retriever = GlossaryRetriever(glossary_path, db_path)
+        self.retriever = GlossaryRetriever(glossary_path=GLOSSARY_PATH, db_path=DB_PATH)
         self.prompt_builder = PromptBuilder()
         self.sql_generator = SQLGenerator()
-        self.sql_executor = SQLExecutor(db_path)
+        self.sql_executor = SQLExecutor(db_path=DB_PATH)
 
     def run(self, question):
 

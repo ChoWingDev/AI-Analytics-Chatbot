@@ -1,5 +1,6 @@
 import os
-import google.generativeai as genai
+from click import prompt
+from google import genai
 from config import GEMINI_API_KEY
 
 
@@ -7,15 +8,14 @@ class SQLGenerator:
 
     def __init__(self):
 
-        genai.configure(
-            api_key=GEMINI_API_KEY
-        )
-
-        self.model = genai.GenerativeModel("models/gemini-2.0-flash-lite")
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def generate_sql(self, prompt):
 
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
 
         print("===== RAW RESPONSE =====")
         print(response.text)
@@ -30,27 +30,23 @@ class SQLGenerator:
 
         return sql
 
+from retriever import GlossaryRetriever
+from prompt_builder import PromptBuilder
+from config import GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH
+
 if __name__ == "__main__":
-    """
-    for model in genai.list_models():
-            if "generateContent" in model.supported_generation_methods:
-                print(model.name)
-    """
+    question = "What are the top 5 product categories by revenue in 202101?"
 
-    prompt = """
-    You are a SQL expert.
-    Use SQLite syntax only.
+    # 1. Retrieve context from RAG
+    retriever = GlossaryRetriever(GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH)
+    retrieval_result = retriever.retrieve(question)
 
-    Question:
-    What was the total revenue last month?
+    # 2. Build prompt with context
+    builder = PromptBuilder()
+    prompt = builder.build_prompt(question, retrieval_result)
 
-    Generate SQL only.
-    """
-    print("===== PROMPT =====")
-    print(prompt)
-
+    # 3. Generate SQL using enriched prompt
     generator = SQLGenerator()
-
-    sql = generator.generate_sql(prompt)
+    sql = generator.generate_sql(prompt)  # ✅ pass prompt not question
 
     print(sql)

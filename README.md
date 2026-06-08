@@ -316,6 +316,120 @@ jupyter notebook
 ```
 
 ---
+# 🛠️ Debugging Log — AI Analytics Copilot (Text-to-SQL Pipeline)
+
+## Overview
+
+This document records the key issues encountered and resolved during development of the Text-to-SQL RAG pipeline, including root cause analysis and solutions applied.
+
+---
+
+## Issue 1: SQL Generator Ignoring RAG Pipeline
+
+**Symptom**
+The `sql_generator.py` test was passing the raw user question directly to the LLM, bypassing the entire RAG pipeline. The LLM responded with general world knowledge instead of querying the local database.
+
+**Root Cause**
+The `__main__` block in `sql_generator.py` called `generate_sql(question)` directly without first running retrieval and prompt building.
+
+**Solution**
+Wire the full pipeline in the correct order:
+1. `GlossaryRetriever.retrieve(question)` — fetch metrics, schema, time periods
+2. `PromptBuilder.build_prompt(question, retrieval_result)` — build enriched prompt
+3. `SQLGenerator.generate_sql(prompt)` — pass the enriched prompt, not the raw question
+
+---
+
+## Issue 2: Deprecated `google.generativeai` Package
+
+**Symptom**
+`FutureWarning` on every run stating that `google.generativeai` is no longer supported.
+
+**Solution**
+Migrate to the new `google.genai` package. The API interface changed significantly:
+
+```python
+# Old
+import google.generativeai as genai
+genai.configure(api_key=KEY)
+model = genai.GenerativeModel("models/gemini-2.5-flash")
+response = model.generate_content(prompt)
+
+# New
+from google import genai
+client = genai.Client(api_key=KEY)
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=prompt
+)
+```
+
+---
+
+## Issue 3: Inconsistent Query Results Between `mart_product_sales` and Raw Table Join
+
+**Symptom**
+Two queries for the same question ("top 5 product categories by revenue in 202101") returned different numbers depending on whether `mart_product_sales` or a raw `order_items JOIN products` was used.
+
+**Root Cause**
+The two approaches used different date source columns:
+- `mart_product_sales.order_date` = `DATE(orders.created_at)`
+- Raw query used `DATE(order_items.created_at)`
+
+Although these timestamps should theoretically be the same, ~2.46% of `order_items.created_at` records are missing or have slight timestamp differences, causing records to fall into different date buckets after `DATE()` truncation.
+
+**Solution**
+- Standardise on `mart_product_sales` as the single source of truth for product/category revenue queries
+- Added `category_revenue` as a separate glossary metric explicitly pointing to `mart_product_sales`
+- Added business logic rule: *"Date filters must be applied to `order_date` which represents `DATE(orders.created_at)`"*
+
+---
+
+## Issue 4: Prompt Too Long — Hitting API Quota
+
+**Symptom**
+Prompts were excessively long due to RAG chunks from `thelook_db_documentation.docx` injecting redundant and irrelevant schema information. This caused rapid exhaustion of the free-tier API quota (20 requests/day).
+
+**Root Cause**
+- `RecursiveCharacterTextSplitter` with `chunk_size=900` was blindly splitting the documentation, causing chunks to mix content from multiple tables
+- Both RAG doc chunks and SQLite PRAGMA were injecting schema information, resulting in duplication
+
+**Solution**
+Replaced the RAG doc approach with a leaner two-source architecture:
+
+| Source | Purpose |
+|---|---|
+| `glossary.json` (structured JSON) | Metric definitions, formulas, business logic, preferred source |
+| SQLite `PRAGMA table_info()` | Exact column list per table, dynamically fetched |
+
+Key changes:
+- Removed `build_schema_documents()` and Word doc embedding entirely
+- Compressed schema injection to a single line per table: `Table mart_product_sales (order_date, category, gross_sales, ...)`
+- Capped metric injection to top 2 most relevant metrics
+- Capped business logic rules to 3 per metric
+
+---
+## Final Results
+
+| Metric | Value |
+|---|---|
+| Total Test Cases | 5 |
+| Passed | 4 |
+| Execution Accuracy | **80%** |
+| Remaining Failure | `top 5 product categories by revenue in 202101` — keyword routing fix pending validation |
+
+---
+
+## Key Takeaways
+
+> **Glossary quality is the single most important factor in Text-to-SQL accuracy.**
+
+The priority order for context injection is:
+
+1. **Glossary** — controls which table, field, and formula the LLM uses
+2. **Prompt instructions** — enforces constraints and prevents hallucination
+3. **SQLite PRAGMA schema** — validates column existence
+4. **RAG doc** — only needed for edge cases not covered by the glossary
 
 # 📊 Current Evaluation Results
 

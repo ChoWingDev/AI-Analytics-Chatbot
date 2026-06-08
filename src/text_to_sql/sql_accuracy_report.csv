@@ -1,0 +1,66 @@
+passed,reason,question,expected_sql,generated_sql,expected_result,generated_result
+True,Result matched,What is the total revenue in 2021,"
+SELECT 
+    ROUND(SUM(order_revenue),2) AS total_revenue 
+FROM mart_order_summary
+WHERE strftime('%Y', order_created_at)='2021' AND status = 'Complete';
+","SELECT
+  SUM(gross_sales) AS revenue
+FROM mart_daily_sales
+WHERE
+  STRFTIME('%Y', order_date) = '2021';",,
+False,Result values mismatch,What are the top 5 product categories by revenue in 202101?,"
+SELECT 
+    category,
+    ROUND(SUM(gross_sales),2) AS total_revenue 
+FROM mart_product_sales
+WHERE strftime('%Y%m', order_date) = '202101'
+GROUP BY category
+ORDER BY total_revenue DESC
+LIMIT 5;
+","SELECT
+  category,
+  SUM(gross_sales) AS category_revenue
+FROM mart_product_sales
+WHERE
+  STRFTIME('%Y%m', order_date) = '202101'
+GROUP BY
+  category
+ORDER BY
+  category_revenue DESC
+LIMIT 5;","[{'category': 'Outerwear & Coats', 'total_revenue': 7506.91}, {'category': 'Jeans', 'total_revenue': 6046.37}, {'category': 'Sweaters', 'total_revenue': 5106.0}, {'category': 'Suits & Sport Coats', 'total_revenue': 4437.88}, {'category': 'Swim', 'total_revenue': 3534.05}]","[{'category': 'Outerwear & Coats', 'category_revenue': 7506.910015106201}, {'category': 'Jeans', 'category_revenue': 6046.369989395142}, {'category': 'Sweaters', 'category_revenue': 5105.999981880188}, {'category': 'Suits & Sport Coats', 'category_revenue': 4437.88000869751}, {'category': 'Swim', 'category_revenue': 3534.050001144409}]"
+True,Result matched,How many active users purchased in the last 90 days?,"
+SELECT 
+    COUNT(DISTINCT user_id) AS active_users 
+FROM mart_user_segment
+WHERE customer_segment != ""Inactive Users"" AND recency <= '90';
+","SELECT
+  COUNT(DISTINCT user_id) AS active_users
+FROM mart_user_summary
+WHERE
+  last_order_date IS NOT NULL AND last_order_date >= DATE(
+    (
+      SELECT
+        MAX(last_order_date)
+      FROM mart_user_summary
+    ),
+    '-90 days'
+  );",,
+True,Result matched,What is the average order value in 2021? ,"
+    SELECT SUM(order_revenue)/COUNT(DISTINCT order_id)
+    FROM mart_order_summary
+    WHERE strftime('%Y', order_created_at) = '2021' AND status = 'Complete'
+","SELECT
+  CAST(SUM(order_revenue) AS REAL) / COUNT(DISTINCT order_id) AS aov
+FROM mart_order_summary
+WHERE
+  status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2021';",,
+True,Result matched,What is the return rate in 2022?,"
+    SELECT (SUM(returned_units) * 1.0) / SUM(units_sold) AS return_rate
+    FROM mart_product_sales
+    WHERE strftime('%Y', order_date) = '2022';
+","SELECT
+  CAST(SUM(T1.returned_units) AS REAL) / SUM(T1.units_sold) AS return_rate
+FROM mart_product_sales AS T1
+WHERE
+  STRFTIME('%Y', T1.order_date) = '2022';",,

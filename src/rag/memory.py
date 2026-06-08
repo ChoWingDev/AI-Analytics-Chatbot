@@ -74,3 +74,84 @@ class ConversationMemory:
     def turn_count(self) -> int:
         return len(self._turns)
 
+
+# ── SQLite persistence ────────────────────────────────────────────────────────
+
+class SessionStore:
+    """
+    Persists conversation history to SQLite.
+
+    Schema:
+      sessions(session_id, human, ai, timestamp)
+    One row per turn. session_id groups turns belonging to the same
+    conversation.
+    """
+
+    def __init__(self, db_path: str = "sessions.db"):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT    NOT NULL,
+                    human      TEXT    NOT NULL,
+                    ai         TEXT    NOT NULL,
+                    timestamp  TEXT    NOT NULL
+                )
+            """)
+
+    def save_turn(self, session_id: str, human: str, ai: str) -> None:
+        """Write one turn to the database."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions (session_id, human, ai, timestamp) VALUES (?, ?, ?, ?)",
+                (session_id, human, ai, datetime.now(datetime.timezone.utc()).isoformat()),
+            )
+
+    def load_session(self, session_id: str) -> list[Turn]:
+        """Load all turns for a session, oldest first."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT human, ai FROM sessions WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        return [Turn(human=row[0], ai=row[1]) for row in rows]
+
+    def list_sessions(self) -> list[str]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT session_id FROM sessions ORDER BY session_id"
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def delete_session(self, session_id: str) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+
+# ── Factory ───────────────────────────────────────────────────────────────────
+
+def create_session(session_id: str, k: int = 5, db_path: str = "sessions.db"):
+    """
+    Create a (memory, store) pair for a session.
+
+    If the session already exists in SQLite, the last k turns are loaded
+    into the in-memory window so the conversation resumes naturally.
+
+    Returns (memory, store, session_id).
+    """
+    memory = ConversationMemory(k=k)
+    store  = SessionStore(db_path=db_path)
+
+    past_turns = store.load_session(session_id)
+    if past_turns:
+        print(f"Resuming session '{session_id}' — {len(past_turns)} past turns found.")
+        for turn in past_turns[-k:]:
+            memory.add_turn(turn.human, turn.ai)
+    else:
+        print(f"Starting new session '{session_id}'.")
+
+    return memory, store, session_id

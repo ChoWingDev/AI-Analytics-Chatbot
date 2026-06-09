@@ -1,9 +1,9 @@
-from retriever import GlossaryRetriever
-from prompt_builder import PromptBuilder
-from sql_generator import SQLGenerator
-from sql_executor import SQLExecutor
-from sql_evaluator import evaluate_sql
-from config import GLOSSARY_PATH, DB_PATH
+from .retriever import GlossaryRetriever
+from .prompt_builder import PromptBuilder
+from .sql_generator import SQLGenerator
+from .sql_executor import SQLExecutor
+from .sql_evaluator import evaluate_sql
+from .config import GLOSSARY_PATH, DB_PATH
 
 class TextToSQLPipeline:
     def __init__(self, glossary_path, db_path):

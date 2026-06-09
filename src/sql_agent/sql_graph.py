@@ -1,9 +1,9 @@
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
 
-from retriever import GlossaryRetriever
-from prompt_builder import PromptBuilder
-from sql_executor import SQLExecutor
+from .retriever import GlossaryRetriever
+from .prompt_builder import PromptBuilder
+from .sql_executor import SQLExecutor
 
 
 class SQLAgentState(TypedDict):

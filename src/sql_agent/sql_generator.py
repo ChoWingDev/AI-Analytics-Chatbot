@@ -1,7 +1,7 @@
 import os
 from click import prompt
 from google import genai
-from config import GEMINI_API_KEY
+from .config import GEMINI_API_KEY
 
 
 class SQLGenerator:
@@ -30,9 +30,9 @@ class SQLGenerator:
 
         return sql
 
-from retriever import GlossaryRetriever
-from prompt_builder import PromptBuilder
-from config import GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH
+from .retriever import GlossaryRetriever
+from .prompt_builder import PromptBuilder
+from .config import GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH
 
 if __name__ == "__main__":
     question = "What are the top 5 product categories by revenue in 202101?"

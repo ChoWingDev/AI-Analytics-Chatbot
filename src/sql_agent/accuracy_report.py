@@ -16,9 +16,9 @@ import json
 import sqlite3
 import pandas as pd
 
-from config import DB_PATH, GLOSSARY_PATH, TEST_CASE_PATH
-from sql_pipeline import TextToSQLPipeline
-from sql_evaluator import evaluate_sql
+from .config import DB_PATH, GLOSSARY_PATH, TEST_CASE_PATH
+from .sql_pipeline import TextToSQLPipeline
+from .sql_evaluator import evaluate_sql
 
 
 def load_test_cases(path):

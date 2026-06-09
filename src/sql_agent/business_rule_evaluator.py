@@ -2,7 +2,7 @@ import re
 import json
 import pandas as pd
 
-from pipeline import TextToSQLPipeline
+from .sql_pipeline import TextToSQLPipeline
 
 def normalize_sql(sql: str) -> str:
     return re.sub(r"\s+", " ", sql.lower()).strip()

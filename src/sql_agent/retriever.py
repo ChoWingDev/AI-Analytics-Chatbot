@@ -3,7 +3,7 @@ import sqlite3
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from config import GEMINI_API_KEY, GLOSSARY_PATH, DB_PATH
+from .config import GEMINI_API_KEY, GLOSSARY_PATH, DB_PATH
 
 class GlossaryRetriever:
     def __init__(self, glossary_path=GLOSSARY_PATH, db_path=DB_PATH):

@@ -52,3 +52,84 @@ def ask(
     store.save_turn(session_id, question, answer)
 
     return answer
+
+
+def run_scripted_conversation(vectorstore, child_docs, session_id: str = "demo"):
+    """
+    Demo: 5 consecutive follow-up questions.
+
+    Designed to test multi-turn context:
+      T1 — Grounding question (establishes the topic in memory)
+      T2 — Follow-up using "that" (tests pronoun resolution via history)
+      T3 — Causal follow-up (tests retention of prior answer)
+      T4 — Cross-company pivot (tests context switch with history intact)
+      T5 — Vague question (tests clarification layer)
+
+    Without memory, T2 and T3 would fail because the LLM would not know
+    what "that" or "that growth" refer to. With the window memory injected
+    into the prompt, it resolves correctly.
+    """
+    print("\n" + "=" * 60)
+    print("Demo - Multi-Turn Conversation")
+    print(f"Session ID: {session_id}")
+    print("=" * 60)
+
+    memory, store, session_id = create_session(session_id, k=5)
+
+    turns = [
+        {
+            "question": "What was Aritzia eCommerce net revenue in fiscal 2025 and how did it grow?",
+            "year":     2025,
+            "doc_type": "company_report",
+            "note":     "T1 — Grounding: establishes revenue figure in memory",
+        },
+        {
+            "question": "How does that compare to their 2024 performance?",
+            "year":     None,
+            "doc_type": "company_report",
+            "note":     "T2 — Follow-up: 'that' resolves to T1 revenue figure via history",
+        },
+        {
+            "question": "What technology investments did Aritzia make to drive that growth?",
+            "year":     2025,
+            "doc_type": "company_report",
+            "note":     "T3 — Causal: 'that growth' resolves from T1/T2 context",
+        },
+        {
+            "question": "Did Zara report similar eCommerce growth in their 2025 annual report?",
+            "year":     2025,
+            "doc_type": "company_report",
+            "note":     "T4 — Cross-company: pivots to Zara while retaining prior context",
+        },
+        {
+            "question": "What about risks?",
+            "year":     None,
+            "doc_type": None,
+            "note":     "T5 — Vague: should trigger clarification layer",
+        },
+    ]
+
+    for i, turn in enumerate(turns, 1):
+        print(f"\n{'─' * 60}")
+        print(f"Turn {i} — {turn['note']}")
+        print(f"Q: {turn['question']}")
+        print(f"Memory: {memory.turn_count} turn(s) in window")
+        print("─" * 40)
+
+        answer = ask(
+            question=turn["question"],
+            vectorstore=vectorstore,
+            child_docs=child_docs,
+            memory=memory,
+            store=store,
+            session_id=session_id,
+            year=turn["year"],
+            doc_type=turn["doc_type"],
+        )
+
+        print(f"A: {answer}")
+
+    print(f"\n{'=' * 60}")
+    print(f"Session complete — {memory.turn_count} turns in memory window.")
+    print(f"Full history saved to sessions.db (session_id='{session_id}')")
+    print("=" * 60)

@@ -12,7 +12,7 @@ Conversation memory with two layers:
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ── Data structure ────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ class SessionStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, human, ai, timestamp) VALUES (?, ?, ?, ?)",
-                (session_id, human, ai, datetime.now(datetime.timezone.utc()).isoformat()),
+                (session_id, human, ai, datetime.now(timezone.utc).isoformat()),
             )
 
     def load_session(self, session_id: str) -> list[Turn]:

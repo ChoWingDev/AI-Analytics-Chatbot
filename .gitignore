@@ -147,3 +147,6 @@ chroma_db/
 
 # Exclude binary files
 *.bin
+
+# Exclude .db files
+*.db

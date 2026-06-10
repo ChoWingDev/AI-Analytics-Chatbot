@@ -54,7 +54,7 @@ def ask(
     return answer
 
 
-def run_scripted_conversation(vectorstore, child_docs, session_id: str = "demo"):
+def run_scripted_conversation(vectorstore, child_docs, session_id: str = "conversation demo"):
     """
     Demo: 5 consecutive follow-up questions.
 
@@ -81,25 +81,25 @@ def run_scripted_conversation(vectorstore, child_docs, session_id: str = "demo")
             "question": "What was Aritzia eCommerce net revenue in fiscal 2025 and how did it grow?",
             "year":     2025,
             "doc_type": "company_report",
-            "note":     "T1 — Grounding: establishes revenue figure in memory",
+            "note":     "T1 — Grounding: establishes $951M revenue figure in memory",
         },
         {
-            "question": "How does that compare to their 2024 performance?",
-            "year":     None,
-            "doc_type": "company_report",
-            "note":     "T2 — Follow-up: 'that' resolves to T1 revenue figure via history",
-        },
-        {
-            "question": "What technology investments did Aritzia make to drive that growth?",
+            "question": "What was the eCommerce 2.0 platform Aritzia launched to support that growth?",
             "year":     2025,
             "doc_type": "company_report",
-            "note":     "T3 — Causal: 'that growth' resolves from T1/T2 context",
+            "note":     "T2 — Follow-up: 'that growth' resolves to T1; eCommerce 2.0 is explicitly in the doc",
         },
         {
-            "question": "Did Zara report similar eCommerce growth in their 2025 annual report?",
+            "question": "What digital marketing investments did Aritzia make alongside that platform launch?",
             "year":     2025,
             "doc_type": "company_report",
-            "note":     "T4 — Cross-company: pivots to Zara while retaining prior context",
+            "note":     "T3 — Causal: 'that platform launch' resolves from T2; digital marketing is in the doc",
+        },
+        {
+            "question": "According to the industry logistics report, what percentage of carts are abandoned and why?",
+            "year":     2024,
+            "doc_type": "industry_benchmark",
+            "note":     "T4 — Pivot to benchmark data; tests context switch while retaining session history",
         },
         {
             "question": "What about risks?",

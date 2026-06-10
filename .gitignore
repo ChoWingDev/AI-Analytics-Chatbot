@@ -85,6 +85,7 @@ target/
 # IPython
 profile_default/
 ipython_config.py
+config.py
 
 # pyenv
 .python-version
@@ -139,7 +140,6 @@ figures/
 
 # Exclude pickles
 *.pkl
-*.pickle
 
 # Exclude chromadb
 chroma_db/

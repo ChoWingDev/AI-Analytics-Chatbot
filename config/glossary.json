@@ -2,843 +2,21 @@
   "metadata": {
     "purpose": "Business glossary for ecommerce SQL/RAG agent metric definitions",
     "sql_dialect": "SQLite",
-    "design_principle": "mart/view-first semantic layer; use base tables only when no suitable mart/view exists.",
+    "design_principle": "Mart-first semantic layer; use curated marts/views to prevent multi-item duplication. Never mix base tables when an analytical view is present.",
     "source_priority": [
-      "1. preferred_source: curated mart/view if available",
-      "2. fallback_sources: base tables or lower-level views when mart/view cannot support the metric",
-      "3. calculability_status: mark metrics as not_directly_calculable if required source data is missing"
-    ],
-    "known_project_sources": {
-      "mart_order_summary": "order-level view; 1 row per order; useful for AOV, revenue, cost, gross profit, margin, return and delivery metrics",
-      "mart_daily_sales": "daily sales view; useful for revenue trend, order count, item count and daily KPI aggregation",
-      "mart_product_sales": "product/category-level sales view; useful for product revenue, product/category AOV, margin and product performance",
-      "mart_user_segment": "user/customer-level segment view; useful for customer segments such as new, returning, inactive, VIP, whale and retention/churn logic if fields exist",
-      "events": "base event table; useful for traffic/funnel metrics because event-level mart may not exist yet",
-      "orders": "base order table; fallback for lifecycle and fulfillment date logic",
-      "order_items": "base item table; fallback for item-level revenue and product joins",
-      "products": "base product table; fallback for product cost, retail price and category fields",
-      "inventory_items": "base inventory table; fallback for stock availability logic if current-stock fields exist"
-    },
-    "notes": [
-      "sql_formula may use logical aliases such as order_revenue, gross_profit, total_sessions, converted_sessions, churned_users, or eligible_users.",
-      "preferred_source_fields shows the expected fields from the preferred mart/view. Validate actual column names in SQLite before production SQL generation.",
-      "Rate metrics are expressed as percentages unless otherwise stated, so formulas use numerator * 100.0 / denominator.",
-      "If the preferred_source does not contain the needed field, use fallback_sources."
+      "1. mart_order_summary: Order-level KPIs (AOV, Revenue, Margin, Return Rate)",
+      "2. mart_product_sales: Category, Brand, and SKU level performance (Complete sales only)",
+      "3. mart_daily_sales: Daily time-series trends and aggregation",
+      "4. mart_user_summary / mart_user_segment: User lifecycle, segments, and RFM",
+      "5. base tables (events, order_items): Use ONLY when traffic funnels or item-level tracking is explicitly requested"
     ]
   },
   "metrics": {
-    "churn_rate": {
-      "business_name": "Churn Rate",
-      "definition": "Percentage of customers who previously purchased but have no completed orders for more than the churn inactivity window.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "customer_type",
-        "last_order_date",
-        "recency"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "default_inactivity_window_days": 90,
-      "alternative_inactivity_windows_days": [
-        90,
-        180
-      ],
-      "sql_formula": "COUNT(DISTINCT churned_users) * 100.0 / COUNT(DISTINCT eligible_users)",
-      "business_logic": [
-        "eligible_users = users with at least one completed order before the evaluation date",
-        "churned_users = eligible_users whose latest completed order is older than 90 or 180 days",
-        "completed order filter: status = 'Complete'",
-        "If mart_user_summary already has inactive/churn customer_type, use that instead of recalculating from orders"
-      ],
-      "calculability_status": "calculable"
-    },
-    "retention_rate": {
-      "business_name": "Retention Rate",
-      "definition": "Percentage of existing customers who made at least one completed repeat purchase within the target period.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "first_order_date",
-        "last_order_date",
-        "frequency",
-        "customer_type"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT retained_users) * 100.0 / COUNT(DISTINCT eligible_existing_users)",
-      "business_logic": [
-        "eligible_existing_users = users who purchased before the target period",
-        "retained_users = eligible_existing_users with at least one completed order during the target period",
-        "completed order filter: status = 'Complete'"
-      ],
-      "calculability_status": "calculable"
-    },
-    "reactivation_rate": {
-      "business_name": "Reactivation Rate",
-      "definition": "Percentage of inactive customers who returned and made a completed purchase during the target period.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "customer_type",
-        "last_order_date",
-        "recency"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT reactivated_users) * 100.0 / COUNT(DISTINCT inactive_users)",
-      "business_logic": [
-        "inactive_users = users with no completed orders for more than 90 or 180 days before the target period",
-        "reactivated_users = inactive_users with a completed order during the target period"
-      ],
-      "calculability_status": "calculable"
-    },
-    "roi": {
-      "business_name": "Return on Investment",
-      "definition": "Profit generated relative to cost. In this project this is product/order profitability ROI, not paid-media ROI.",
-      "grain": "order-level",
-      "source_layer": "mart",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "order_id",
-        "order_revenue",
-        "order_cost",
-        "gross_profit",
-        "status",
-        "order_created_at"
-      ],
-      "fallback_sources": [
-        "order_items",
-        "products",
-        "orders"
-      ],
-      "fallback_fields": {
-        "order_items": [
-          "order_id",
-          "product_id",
-          "sale_price"
-        ],
-        "products": [
-          "id",
-          "cost"
-        ],
-        "orders": [
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "SUM(gross_profit) * 100.0 / SUM(order_cost)",
-      "business_logic": [
-        "gross_profit = order_revenue - order_cost",
-        "order_cost = sum product cost for sold items",
-        "Use completed orders when analyzing realized revenue/profit"
-      ],
-      "calculability_status": "calculable"
-    },
-    "aov": {
-      "business_name": "Average Order Value",
-      "definition": "Average completed order revenue.",
-      "grain": "order-level",
-      "source_layer": "mart",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "order_id",
-        "order_revenue",
-        "status",
-        "order_created_at"
-      ],
-      "fallback_sources": [
-        "orders",
-        "order_items"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "order_id",
-          "status",
-          "created_at"
-        ],
-        "order_items": [
-          "order_id",
-          "sale_price"
-        ]
-      },
-      "sql_formula": "SUM(order_revenue) * 1.0 / COUNT(DISTINCT order_id)",
-      "business_logic": [
-        "Use mart_order_summary because it has one row per order and avoids duplicated order counts from order_items",
-        "completed order filter: status = 'Complete'"
-      ],
-      "calculability_status": "calculable"
-    },
-    "conversion_rate": {
-      "business_name": "Conversion Rate",
-      "definition": "Percentage of visitors or sessions that resulted in a completed purchase.",
-      "aliases": [
-        "cvr"
-      ],
-      "grain": "session-level or user-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "user_id",
-        "event_type",
-        "created_at",
-        "traffic_source"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT converted_sessions) * 100.0 / COUNT(DISTINCT total_sessions)",
-      "business_logic": [
-        "No traffic/funnel mart is assumed yet, so events is the correct source",
-        "total_sessions = distinct events.session_id",
-        "converted_sessions = sessions that directly contain a successful purchase event (e.g., event_type = 'purchase') or are explicitly mapped to a completed order_id within the same session",
-        "completed order filter: status = 'Complete'"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "cvr": {
-      "business_name": "Conversion Rate",
-      "definition": "Alias of conversion_rate.",
-      "alias_of": "conversion_rate"
-    },
-    "ltv_clv": {
-      "business_name": "Lifetime Value / Customer Lifetime Value",
-      "definition": "Estimated total value generated by a customer over their relationship with the business.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "monetary",
-        "frequency",
-        "first_order_date",
-        "last_order_date"
-      ],
-      "fallback_sources": [
-        "mart_order_summary",
-        "orders",
-        "order_items"
-      ],
-      "fallback_fields": {
-        "mart_order_summary": [
-          "user_id",
-          "order_id",
-          "order_revenue",
-          "status",
-          "order_created_at"
-        ],
-        "orders": [
-          "order_id",
-          "user_id",
-          "status",
-          "created_at"
-        ],
-        "order_items": [
-          "order_id",
-          "sale_price"
-        ]
-      },
-      "sql_formula": "AOV * average_purchase_frequency_per_year * average_customer_lifetime_years",
-      "alternative_sql_formula": "SUM(customer_revenue) for historical CLV",
-      "business_logic": [
-        "AOV = completed order revenue / completed orders",
-        "average_purchase_frequency_per_year = completed orders per customer per year",
-        "average_customer_lifetime_years = average active lifetime in years",
-        "If mart_user_summary stores monetary (lifetime revenue), use it for historical CLV"
-      ],
-      "calculability_status": "calculable"
-    },
-    "repeat_purchase_rate": {
-      "business_name": "Repeat Purchase Rate",
-      "definition": "Percentage of customers who made more than one completed purchase.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "frequency",
-        "customer_type"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT repeat_customers) * 100.0 / COUNT(DISTINCT total_customers)",
-      "business_logic": [
-        "repeat_customers = users with more than one completed order",
-        "total_customers = users with at least one completed order"
-      ],
-      "calculability_status": "calculable"
-    },
-    "new_vs_returning_customer_ratio": {
-      "business_name": "New vs Returning Customer Ratio",
-      "definition": "Ratio of new customers to returning customers in the target period.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "customer_type",
-        "first_order_date",
-        "frequency"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT new_customers) * 1.0 / COUNT(DISTINCT returning_customers)",
-      "business_logic": [
-        "new_customer = first completed order occurs within target period",
-        "returning_customer = customer had completed order before target period and/or completed_order_count > 1"
-      ],
-      "calculability_status": "calculable"
-    },
-    "vip_whale_ratio": {
-      "business_name": "VIP / Whale Ratio",
-      "definition": "Percentage of customers classified as high-value customers.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "customer_type",
-        "monetary"
-      ],
-      "fallback_sources": [
-        "mart_order_summary"
-      ],
-      "fallback_fields": {
-        "mart_order_summary": [
-          "user_id",
-          "order_revenue",
-          "status"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT vip_customers) * 100.0 / COUNT(DISTINCT total_customers)",
-      "business_logic": [
-        "vip_customers = customers in top revenue percentile, usually top 5% or top 10%",
-        "whale_customers = customers in top 1% by lifetime revenue"
-      ],
-      "default_threshold": "top 10% by lifetime revenue",
-      "calculability_status": "calculable"
-    },
-    "gross_margin_rate": {
-      "business_name": "Gross Margin Rate",
-      "definition": "Percentage of revenue remaining after product cost.",
-      "grain": "order-level",
-      "source_layer": "mart",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "order_id",
-        "order_revenue",
-        "order_cost",
-        "gross_profit",
-        "gross_margin"
-      ],
-      "fallback_sources": [
-        "order_items",
-        "products"
-      ],
-      "fallback_fields": {
-        "order_items": [
-          "product_id",
-          "sale_price"
-        ],
-        "products": [
-          "id",
-          "cost"
-        ]
-      },
-      "sql_formula": "SUM(gross_profit) * 100.0 / SUM(order_revenue)",
-      "business_logic": [
-        "gross_profit = order_revenue - order_cost",
-        "Use mart_order_summary if margin is analyzed at order level",
-        "Use mart_product_sales if margin is analyzed by product/category"
-      ],
-      "alternative_preferred_source": "mart_product_sales",
-      "calculability_status": "calculable"
-    },
-    "discount_rate": {
-      "business_name": "Discount Rate",
-      "definition": "Percentage discount relative to original retail price. Calculated based on purchased items in order_items joined with products.",
-      "grain": "item-level or product-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "order_items",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "product_id",
-        "sale_price"
-      ],
-      "fallback_sources": [
-        "products"
-      ],
-      "fallback_fields": {
-        "products": [
-          "id",
-          "retail_price"
-        ]
-      },
-      "sql_formula": "(SUM(retail_price) - SUM(sale_price)) * 100.0 / SUM(retail_price)",
-      "business_logic": [
-        "Use only if products.retail_price represents original/list price",
-        "join order_items.product_id = products.id"
-      ],
-      "recommended_future_view": "mart_product_sales",
-      "calculability_status": "calculable_if_retail_price_exists"
-    },
-    "return_rate": {
-      "business_name": "Return Rate",
-      "definition": "Percentage of orders returned by customers.",
-      "grain": "order-level",
-      "source_layer": "mart",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "order_id",
-        "status",
-        "order_returned_at",
-        "order_created_at"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "order_id",
-          "status",
-          "created_at",
-          "returned_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT returned_orders) * 100.0 / COUNT(DISTINCT total_orders)",
-      "business_logic": [
-        "returned_orders = orders with status = 'Returned' or returned_at/order_returned_at IS NOT NULL"
-      ],
-      "calculability_status": "calculable"
-    },
-    "refund_rate": {
-      "business_name": "Refund Rate",
-      "definition": "Percentage of orders or order items refunded.",
-      "grain": "order-level or item-level",
-      "source_layer": "not_available",
-      "preferred_source": null,
-      "preferred_source_type": null,
-      "preferred_source_fields": [],
-      "fallback_sources": [],
-      "sql_formula": "COUNT(DISTINCT refunded_orders) * 100.0 / COUNT(DISTINCT total_orders)",
-      "business_logic": [
-        "Use only if refund status, refund amount, or refund table exists"
-      ],
-      "notes": "If the database only has returned orders but no refund data, use return_rate instead.",
-      "calculability_status": "not_directly_calculable"
-    },
-    "on_time_delivery_rate": {
-      "business_name": "On-Time Delivery Rate",
-      "definition": "Percentage of delivered orders delivered within the target delivery SLA.",
-      "grain": "order-level",
-      "source_layer": "mart",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "order_id",
-        "order_created_at",
-        "order_delivered_at",
-        "status"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "order_id",
-          "created_at",
-          "delivered_at",
-          "status"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT on_time_orders) * 100.0 / COUNT(DISTINCT delivered_orders)",
-      "business_logic": [
-        "delivered_orders = orders with delivered_at/order_delivered_at IS NOT NULL",
-        "on_time_orders = delivered orders where delivery_days <= target_sla_days"
-      ],
-      "default_sla_days": 7,
-      "calculability_status": "calculable"
-    },
-    "product_view_rate": {
-      "business_name": "Product View Rate",
-      "definition": "Percentage of sessions that included at least one product page view.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "event_type",
-        "uri",
-        "created_at"
-      ],
-      "fallback_sources": [],
-      "sql_formula": "COUNT(DISTINCT product_view_sessions) * 100.0 / COUNT(DISTINCT total_sessions)",
-      "business_logic": [
-        "product_view_sessions = sessions with event_type indicating product view or product page URI"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "add_to_cart_rate": {
-      "business_name": "Add-to-Cart Rate",
-      "definition": "Percentage of product-view sessions that added at least one product to cart.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "event_type",
-        "created_at"
-      ],
-      "fallback_sources": [],
-      "sql_formula": "COUNT(DISTINCT add_to_cart_sessions) * 100.0 / COUNT(DISTINCT product_view_sessions)",
-      "business_logic": [
-        "add_to_cart_sessions = sessions with add_to_cart event"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "initiate_checkout_rate": {
-      "business_name": "Initiate Checkout Rate",
-      "definition": "Percentage of cart sessions that initiated checkout.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "event_type",
-        "created_at"
-      ],
-      "fallback_sources": [],
-      "sql_formula": "COUNT(DISTINCT checkout_sessions) * 100.0 / COUNT(DISTINCT cart_sessions)",
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "checkout_to_purchase_rate": {
-      "business_name": "Checkout-to-Purchase Rate",
-      "definition": "Percentage of checkout sessions that completed purchase. Purchase_sessions must be a subset of checkout_sessions",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "user_id",
-        "event_type",
-        "created_at"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT purchase_sessions) * 100.0 / COUNT(DISTINCT checkout_sessions)",
-      "business_logic": [
-        "purchase_sessions should be tied to completed orders where possible"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "cart_abandonment_rate": {
-      "business_name": "Cart Abandonment Rate",
-      "definition": "Percentage of add-to-cart sessions that did not complete purchase.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "user_id",
-        "event_type",
-        "created_at"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "(COUNT(DISTINCT cart_sessions) - COUNT(DISTINCT purchase_sessions)) * 100.0 / COUNT(DISTINCT cart_sessions)",
-      "business_logic": [
-        "cart_sessions = sessions with add_to_cart event",
-        "purchase_sessions = cart_sessions that later resulted in completed purchase"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "search_usage_rate": {
-      "business_name": "Search Usage Rate",
-      "definition": "Percentage of sessions that used onsite search.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "event_type",
-        "uri",
-        "created_at"
-      ],
-      "fallback_sources": [],
-      "sql_formula": "COUNT(DISTINCT search_sessions) * 100.0 / COUNT(DISTINCT total_sessions)",
-      "business_logic": [
-        "search_sessions = sessions with search event or search query URI pattern"
-      ],
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "search_cvr": {
-      "business_name": "Search Conversion Rate",
-      "definition": "Percentage of onsite search sessions that resulted in completed purchase.",
-      "grain": "session-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "user_id",
-        "event_type",
-        "uri",
-        "created_at"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT converted_search_sessions) * 100.0 / COUNT(DISTINCT search_sessions)",
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable_with_event_logic"
-    },
-    "traffic_metrics": {
-      "business_name": "Traffic Metrics",
-      "definition": "Website/app traffic metrics based on sessions, users, events and traffic source.",
-      "grain": "session-level, user-level, or event-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "session_id",
-        "user_id",
-        "event_type",
-        "traffic_source",
-        "created_at",
-        "uri"
-      ],
-      "sql_formula_examples": {
-        "sessions": "COUNT(DISTINCT session_id)",
-        "visitors": "COUNT(DISTINCT user_id)",
-        "events": "COUNT(*)",
-        "sessions_by_traffic_source": "COUNT(DISTINCT session_id) GROUP BY traffic_source"
-      },
-      "recommended_future_view": "mart_traffic_funnel",
-      "calculability_status": "calculable"
-    },
-    "roas": {
-      "business_name": "Return on Ad Spend",
-      "definition": "Revenue generated per dollar of advertising spend.",
-      "grain": "campaign-level",
-      "source_layer": "not_available",
-      "preferred_source": null,
-      "preferred_source_fields": [],
-      "fallback_sources": [],
-      "sql_formula": "SUM(ad_revenue) / SUM(ad_spend)",
-      "business_logic": [
-        "Only use this metric if an ad spend or campaign spend table exists"
-      ],
-      "calculability_status": "not_directly_calculable"
-    },
-    "cac": {
-      "business_name": "Customer Acquisition Cost",
-      "definition": "Average cost to acquire one new customer.",
-      "grain": "campaign-level",
-      "source_layer": "not_available",
-      "preferred_source": null,
-      "preferred_source_fields": [],
-      "fallback_sources": [],
-      "sql_formula": "SUM(acquisition_cost) / COUNT(DISTINCT new_customers)",
-      "business_logic": [
-        "Only use this metric if marketing spend or acquisition cost data exists"
-      ],
-      "calculability_status": "not_directly_calculable"
-    },
-    "cpa_cpp": {
-      "business_name": "Cost Per Acquisition / Cost Per Purchase",
-      "definition": "Average marketing cost per acquired customer or completed purchase.",
-      "grain": "campaign-level",
-      "source_layer": "not_available",
-      "preferred_source": null,
-      "preferred_source_fields": [],
-      "fallback_sources": [],
-      "sql_formula": "SUM(marketing_cost) / COUNT(DISTINCT acquisitions_or_purchases)",
-      "business_logic": [
-        "Only use this metric if marketing cost data exists"
-      ],
-      "calculability_status": "not_directly_calculable"
-    },
-    "ctr": {
-      "business_name": "Click-Through Rate",
-      "definition": "Percentage of impressions that resulted in clicks.",
-      "grain": "campaign-level or event-level",
-      "source_layer": "conditional",
-      "preferred_source": "events",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "event_type",
-        "session_id",
-        "user_id",
-        "created_at"
-      ],
-      "fallback_sources": [],
-      "sql_formula": "SUM(clicks) * 100.0 / SUM(impressions)",
-      "business_logic": [
-        "Use only if event_type can clearly identify impression and click events"
-      ],
-      "calculability_status": "conditional"
-    },
-    "stockout_rate": {
-      "business_name": "Stockout Rate / Out-of-Stock Rate",
-      "definition": "Percentage of products unavailable for purchase.",
-      "grain": "product-level",
-      "source_layer": "table_fallback",
-      "preferred_source": "inventory_items",
-      "preferred_source_type": "base_table",
-      "preferred_source_fields": [
-        "product_id",
-        "sold_at"
-      ],
-      "fallback_sources": [
-        "products"
-      ],
-      "fallback_fields": {
-        "products": [
-          "id"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT out_of_stock_products) * 100.0 / COUNT(DISTINCT active_products)",
-      "business_logic": [
-        "Use inventory availability logic only if inventory table represents current stock",
-        "If inventory_items is historical inventory, this metric may require a separate stock snapshot table"
-      ],
-      "calculability_status": "conditional"
-    },
-    "nps": {
-      "business_name": "Net Promoter Score",
-      "definition": "Customer loyalty score based on survey responses.",
-      "grain": "survey-response-level",
-      "source_layer": "not_available",
-      "preferred_source": null,
-      "preferred_source_fields": [],
-      "fallback_sources": [],
-      "sql_formula": "(COUNT(promoters) - COUNT(detractors)) * 100.0 / COUNT(total_responses)",
-      "business_logic": [
-        "promoters = score 9-10",
-        "passives = score 7-8",
-        "detractors = score 0-6"
-      ],
-      "calculability_status": "not_directly_calculable"
-    },
     "revenue": {
       "business_name": "Revenue",
-      "definition": "Total sales revenue generated from order items.",
-      "grain": "order-item-level",
-      "source_layer": "mart_preferred_with_table_fallback",
+      "definition": "Total gross sales generated from completed orders.",
+      "grain": "order-level",
       "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
       "preferred_source_fields": [
         "order_id",
         "status",
@@ -846,223 +24,120 @@
         "order_revenue"
       ],
       "fallback_sources": [
+        "mart_daily_sales",
         "order_items"
       ],
-      "fallback_fields": {
-        "order_items": [
-          "order_id",
-          "sale_price"
-        ]
-      },
       "sql_formula": "SUM(order_revenue)",
-      "fallback_sql_formula": "SUM(sale_price)",
       "business_logic": [
-        "Revenue is calculated from sale_price at order item level",
-        "Use mart_order_summary.order_revenue when available",
-        "Fallback to SUM(order_items.sale_price) if mart_order_summary is unavailable"
+        "CRITICAL: Always apply the filter: status = 'Complete' on mart_order_summary to reflect actual realized revenue.",
+        "For daily or overall high-level trends without dimensions, mart_daily_sales.gross_sales can be used directly as it is already filtered to Complete.",
+        "Never use products.retail_price for realized revenue; use order_items.sale_price if forced to use base tables."
       ],
       "calculability_status": "calculable"
     },
-    "new_customers": {
-      "business_name": "New Customers",
-      "aliases": [
-        "new users",
-        "new customer",
-        "new customers",
-        "acquired users",
-        "user acquisition",
-        "customer acquisition"
-      ],
-      "definition": "Number of customers classified as new customers based on customer segment logic.",
-      "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
-      "preferred_source_fields": [
-        "user_id",
-        "first_order_date",
-        "frequency",
-        "customer_type"
-      ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT user_id)",
-      "business_logic": [
-        "Use mart_user_summary where customer_type = 'new' or first_order_date falls within the target period",
-        "Fallback logic: users whose first completed order date falls within the new customer window",
-        "completed order filter: status = 'Complete'"
-      ],
-      "calculability_status": "calculable"
-    },
-    "returned_orders": {
-      "business_name": "Returned Orders",
-      "definition": "Number of orders that were returned.",
+    "aov": {
+      "business_name": "Average Order Value",
+      "definition": "The average revenue generated per completed order.",
       "grain": "order-level",
-      "source_layer": "mart_preferred_with_table_fallback",
       "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
       "preferred_source_fields": [
         "order_id",
+        "order_revenue",
         "status",
-        "order_returned_at"
+        "order_created_at"
       ],
       "fallback_sources": [
-        "orders"
+        "mart_daily_sales"
       ],
-      "fallback_fields": {
-        "orders": [
-          "order_id",
-          "status",
-          "returned_at"
-        ]
-      },
-      "sql_formula": "COUNT(DISTINCT order_id)",
+      "sql_formula": "sum(order_revenue)/COUNT(DISTINCT order_id)",
       "business_logic": [
-        "Returned orders are identified where order_returned_at IS NOT NULL",
-        "Fallback logic: returned_at IS NOT NULL from orders",
-        "Status can be used as secondary validation if status = 'Returned'"
+        "CRITICAL: Always filter by status = 'Complete' when calculating AOV from mart_order_summary.",
+        "DO NOT use the AVG() function directly.",
+        "Do not join to order_items for AOV calculation to avoid row inflation and double counting."
       ],
       "calculability_status": "calculable"
     },
-    "delivery_time": {
-      "business_name": "Delivery Time",
-      "definition": "Average number of days between order creation and order delivery.",
+    "category_revenue": {
+      "business_name": "Category Revenue",
+      "definition": "Gross sales generated from completed orders broken down by product category.",
+      "grain": "product-date-level",
+      "preferred_source": "mart_product_sales",
+      "preferred_source_fields": [
+        "order_date",
+        "category",
+        "gross_sales"
+      ],
+      "sql_formula": "SUM(gross_sales)",
+      "business_logic": [
+        "CRITICAL: Use mart_product_sales for any category, brand, or product performace query. DO NOT manually join order_items and products.",
+        "mart_product_sales is already pre-filtered to status = 'Complete' by definition. Do not append status filters to this view.",
+        "Date filters must be applied to order_date (which represents DATE(orders.created_at))."
+      ],
+      "calculability_status": "calculable"
+    },
+    "return_rate": {
+      "business_name": "Return Rate",
+      "definition": "Percentage of total orders that were returned by customers.",
       "grain": "order-level",
-      "source_layer": "mart_preferred_with_table_fallback",
-      "preferred_source": "mart_order_summary",
-      "preferred_source_type": "view",
+      "preferred_source": "mart_product_sales",
       "preferred_source_fields": [
         "order_id",
-        "order_created_at",
-        "order_delivered_at"
+        "returned_units",
+        "units_sold"
       ],
-      "fallback_sources": [
-        "orders"
-      ],
-      "fallback_fields": {
-        "orders": [
-          "order_id",
-          "created_at",
-          "delivered_at"
-        ]
-      },
-      "sql_formula": "AVG(julianday(order_delivered_at) - julianday(order_created_at))",
-      "fallback_sql_formula": "AVG(julianday(delivered_at) - julianday(created_at))",
+      "sql_formula": "SUM(returned_units) * 1.0) / SUM(units_sold",
       "business_logic": [
-        "Only include delivered orders where delivered_at is not null",
-        "Delivery time is measured in days from order creation to delivery",
-        "Exclude cancelled or undelivered orders from delivery time calculation"
+        "The denominator must include ALL orders (not just completed ones) within the specified timeframe to see the accurate standard return rate.",
+        "An order is classified as returned if status = 'Returned' or order_returned_at IS NOT NULL."
       ],
       "calculability_status": "calculable"
     },
-    "returning_customers": {
-      "business_name": "Returning Customers",
-      "definition": "Number of customers who have more than one completed order.",
+    "active_users": {
+      "business_name": "Active Users Count",
+      "definition": "The number of unique registered users who placed at least one order within the target window.",
       "grain": "user-level",
-      "source_layer": "mart_preferred_with_table_fallback",
       "preferred_source": "mart_user_summary",
-      "preferred_source_type": "view",
       "preferred_source_fields": [
         "user_id",
-        "customer_type",
-        "frequency"
+        "last_order_date"
       ],
       "fallback_sources": [
         "orders"
       ],
-      "fallback_fields": {
-        "orders": [
-          "user_id",
-          "order_id",
-          "status",
-          "created_at"
-        ]
-      },
       "sql_formula": "COUNT(DISTINCT user_id)",
       "business_logic": [
-        "Use mart_user_summary where customer_type = 'returning' or frequency > 1",
-        "Fallback logic: users with COUNT(DISTINCT completed order_id) > 1",
-        "completed order filter: status = 'Complete'"
+        "A user is considered active in a given period if their last_order_date falls within that period.",
+        "Users with no orders have NULL last_order_date; ensure they are excluded via IS NOT NULL filters.",
+        "For dynamic 'last X days' filters, find the reference point using (SELECT MAX(last_order_date) FROM mart_user_summary) instead of hardcoding 'now'."
       ],
       "calculability_status": "calculable"
+    },
+    "conversion_rate": {
+      "business_name": "Conversion Rate",
+      "definition": "Percentage of unique web sessions that resulted in a successful purchase event.",
+      "grain": "session-level",
+      "preferred_source": "events",
+      "preferred_source_type": "base_table",
+      "preferred_source_fields": [
+        "session_id",
+        "event_type",
+        "created_at"
+      ],
+      "sql_formula": "COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / COUNT(DISTINCT session_id)",
+      "business_logic": [
+        "Since no traffic funnel mart view exists yet, the base table 'events' must be used.",
+        "Do NOT inner join 'events' to the 'users' table, as anonymous traffic (missing user_id) constitutes 46.4% of total volume and must not be dropped.",
+        "Total sessions = COUNT(DISTINCT session_id). Converted sessions = sessions containing an event_type = 'purchase'."
+      ],
+      "calculability_status": "calculable_with_event_logic"
     }
   },
   "time_periods": {
-    "today": "DATE({date_field}) = DATE('now')",
-    "yesterday": "DATE({date_field}) = DATE('now', '-1 day')",
-    "last_7_days": "DATE({date_field}) >= DATE('now', '-7 day')",
-    "last_30_days": "DATE({date_field}) >= DATE('now', '-30 day')",
-    "last_90_days": "DATE({date_field}) >= DATE('now', '-90 day')",
-    "last_180_days": "DATE({date_field}) >= DATE('now', '-180 day')",
-    "last_month": "DATE({date_field}) >= DATE('now', 'start of month', '-1 month') AND DATE({date_field}) < DATE('now', 'start of month')",
-    "month_to_date": "DATE({date_field}) >= DATE('now', 'start of month') AND DATE({date_field}) <= DATE('now')",
-    "year_to_date": "DATE({date_field}) >= DATE('now', 'start of year') AND DATE({date_field}) <= DATE('now')",
-    "last_quarter": "DATE({date_field}) >= DATE('now', 'start of month', '-'||(((CAST(strftime('%m','now') AS INTEGER)-1)/3)*3+3)||' months') AND DATE({date_field}) < DATE('now', 'start of month', '-'||(((CAST(strftime('%m','now') AS INTEGER)-1)/3)*3)||' months')"
-  },
-  "user_segments": {
-    "new_customer": {
-      "definition": "Customer whose first completed order occurred within the target period.",
-      "logic": "MIN(completed_order_date) BETWEEN period_start AND period_end"
-    },
-    "returning_customer": {
-      "definition": "Customer with more than one completed order.",
-      "logic": "COUNT(DISTINCT completed_order_id) > 1"
-    },
-    "inactive_customer_90d": {
-      "definition": "Customer with no completed orders in the last 90 days.",
-      "logic": "latest_completed_order_date < evaluation_date - 90 days"
-    },
-    "inactive_customer_180d": {
-      "definition": "Customer with no completed orders in the last 180 days.",
-      "logic": "latest_completed_order_date < evaluation_date - 180 days"
-    },
-    "reactivated_customer": {
-      "definition": "Previously inactive customer who completed a new order in the target period.",
-      "logic": "inactive before period_start AND completed order during target period"
-    },
-    "vip_customer": {
-      "definition": "High-value customer based on lifetime revenue percentile.",
-      "logic": "customer_lifetime_revenue in top 10% or custom business threshold"
-    },
-    "whale_customer": {
-      "definition": "Extremely high-value customer based on lifetime revenue percentile.",
-      "logic": "customer_lifetime_revenue in top 1% or custom business threshold"
-    }
-  },
-  "campaign_types": {
-    "organic": "traffic_source = 'Organic'",
-    "email": "traffic_source = 'Email'",
-    "search": "traffic_source = 'Search'",
-    "social": "traffic_source IN ('Facebook', 'Instagram', 'TikTok', 'Adwords')",
-    "direct": "traffic_source = 'Direct'",
-    "unknown": "traffic_source IS NULL OR traffic_source = ''"
-  },
-  "traffic_metrics": {
-    "definition": "Traffic metrics should use events as the current source until a mart_traffic_funnel view is created.",
-    "preferred_source": "events",
-    "recommended_future_view": "mart_traffic_funnel",
-    "base_fields": [
-      "session_id",
-      "user_id",
-      "event_type",
-      "traffic_source",
-      "created_at",
-      "uri"
-    ],
-    "standard_metrics": {
-      "sessions": "COUNT(DISTINCT session_id)",
-      "visitors": "COUNT(DISTINCT user_id)",
-      "events": "COUNT(*)",
-      "sessions_by_traffic_source": "COUNT(DISTINCT session_id) GROUP BY traffic_source"
-    }
+    "last_90_days": "{date_field} >= DATE((SELECT MAX({date_field}) FROM {table_name}), '-90 days')",
+    "last_30_days": "{date_field} >= DATE((SELECT MAX({date_field}) FROM {table_name}), '-30 days')",
+    "last_7_days": "{date_field} >= DATE((SELECT MAX({date_field}) FROM {table_name}), '-7 days')",
+    "in_2021": "STRFTIME('%Y', {date_field}) = '2021'",
+    "in_2022": "STRFTIME('%Y', {date_field}) = '2022'",
+    "in_202101": "STRFTIME('%Y%m', {date_field}) = '202101'"
   }
 }

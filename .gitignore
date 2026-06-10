@@ -143,3 +143,10 @@ figures/
 
 # Exclude chromadb
 chroma_db/
+*.sqlite3
+
+# Exclude binary files
+*.bin
+
+# Exclude .db files
+*.db

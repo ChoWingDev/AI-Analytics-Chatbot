@@ -2,8 +2,8 @@ import json
 import sqlite3
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from .config import GEMINI_API_KEY, GLOSSARY_PATH, DB_PATH
+from src.llm import get_embeddings
+from .config import GLOSSARY_PATH, DB_PATH
 
 class GlossaryRetriever:
     def __init__(self, glossary_path=GLOSSARY_PATH, db_path=DB_PATH):
@@ -12,11 +12,8 @@ class GlossaryRetriever:
 
         self.db_path = db_path
 
-        # 初始化 Gemini Embedding
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            google_api_key=GEMINI_API_KEY
-        )
+        # Shared HuggingFace MiniLM embeddings (Tier-1: one provider, local, no token)
+        self.embeddings = get_embeddings()
 
         # 只建立結構化的指標（Metrics）向量文件，徹底丟棄 Word 物理切片
         all_docs = self.build_metric_documents()

@@ -1,8 +1,11 @@
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
+load_dotenv()  # HF_TOKEN — SQL generation now runs on HuggingFace
 
 from src.sql_agent.sql_pipeline import TextToSQLPipeline
 from src.sql_agent.config import GLOSSARY_PATH, DB_PATH

@@ -1,26 +1,21 @@
-import os
-from click import prompt
-from google import genai
-from .config import GEMINI_API_KEY
+from src.llm import get_llm
 
 
 class SQLGenerator:
+    """Generates SQLite queries from an enriched prompt using the shared HF LLM."""
 
     def __init__(self):
-
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        # Tier-1: standardized on HuggingFace (was Gemini). Deterministic-ish,
+        # enough headroom for multi-line SQL with CTEs.
+        self.llm = get_llm(max_new_tokens=512, temperature=0.0)
 
     def generate_sql(self, prompt):
-
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        response = self.llm.invoke(prompt)
 
         print("===== RAW RESPONSE =====")
-        print(response.text)
+        print(response)
 
-        sql = response.text.strip()
+        sql = response.strip()
 
         # IMPORTANT: remove longer code fence first
         sql = sql.replace("```sqlite", "")
@@ -30,23 +25,24 @@ class SQLGenerator:
 
         return sql
 
+
 from .retriever import GlossaryRetriever
 from .prompt_builder import PromptBuilder
-from .config import GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH
+from .config import GLOSSARY_PATH, DB_PATH
 
 if __name__ == "__main__":
     question = "What are the top 5 product categories by revenue in 202101?"
 
-    # 1. Retrieve context from RAG
-    retriever = GlossaryRetriever(GLOSSARY_PATH, DB_PATH, SCHEMA_DOC_PATH)
+    # 1. Retrieve context from the glossary + live schema
+    retriever = GlossaryRetriever(GLOSSARY_PATH, DB_PATH)
     retrieval_result = retriever.retrieve(question)
 
     # 2. Build prompt with context
     builder = PromptBuilder()
     prompt = builder.build_prompt(question, retrieval_result)
 
-    # 3. Generate SQL using enriched prompt
+    # 3. Generate SQL using the enriched prompt (not the raw question)
     generator = SQLGenerator()
-    sql = generator.generate_sql(prompt)  # ✅ pass prompt not question
+    sql = generator.generate_sql(prompt)
 
     print(sql)

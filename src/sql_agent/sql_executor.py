@@ -3,8 +3,12 @@ import pandas as pd
 
 class SQLExecutor:
     def __init__(self, db_path):
+        # check_same_thread=False: the router executes the SQL pipeline inside an
+        # asyncio worker thread (parallel SQL+RAG), so the connection created here
+        # must be usable from that thread. Read-only analytics queries only.
         self.conn = sqlite3.connect(
-            db_path
+            db_path,
+            check_same_thread=False,
         )
 
     def execute(self, sql):

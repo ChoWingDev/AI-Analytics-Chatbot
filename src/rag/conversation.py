@@ -111,7 +111,7 @@ def run_scripted_conversation(vectorstore, child_docs, session_id: str = "conver
 
     for i, turn in enumerate(turns, 1):
         print(f"\n{'─' * 60}")
-        print(f"Turn {i} — {turn['note']}")
+        print(f"Turn {i} - {turn['note']}")
         print(f"Q: {turn['question']}")
         print(f"Memory: {memory.turn_count} turn(s) in window")
         print("─" * 40)
@@ -130,6 +130,6 @@ def run_scripted_conversation(vectorstore, child_docs, session_id: str = "conver
         print(f"A: {answer}")
 
     print(f"\n{'=' * 60}")
-    print(f"Session complete — {memory.turn_count} turns in memory window.")
+    print(f"Session complete - {memory.turn_count} turns in memory window.")
     print(f"Full history saved to sessions.db (session_id='{session_id}')")
     print("=" * 60)

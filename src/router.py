@@ -167,6 +167,10 @@ class RouterAgent:
         self.router_llm = get_llm(max_new_tokens=16, temperature=0.0)
         self.insights_llm = get_llm(max_new_tokens=1024, temperature=0.1)
 
+        self.history_k = history_k
+        # Which branch the last question took — surfaced by the UI as a badge.
+        self.last_route: Optional[RouteDecision] = None
+
         # SQL pipeline (glossary retrieval → prompt → HF SQL → SQLite execution)
         self.sql_pipeline = TextToSQLPipeline(glossary_path=glossary_path, db_path=db_path)
 
@@ -271,8 +275,24 @@ class RouterAgent:
         self.memory.add_turn(question, report.summary)
         self.store.save_turn(self.session_id, question, report.summary)
 
+    def set_session(self, session_id: str) -> None:
+        """
+        Switch conversations without rebuilding the agent.
+
+        Construction loads the vector store and glossary index (~16s), which is
+        far too slow to repeat when a user just picks another session in the UI.
+        Only the memory/history is per-session, so only that is rebuilt.
+        """
+        self.memory, self.store, self.session_id = create_session(
+            session_id, k=self.history_k
+        )
+
+    def list_sessions(self) -> list[str]:
+        return self.store.list_sessions()
+
     async def run(self, question: str) -> PMReport:
         route = self.classify(question)
+        self.last_route = route
         print(f"[Router] Decision: {route.value}")
 
         sql_result: Optional[str] = None

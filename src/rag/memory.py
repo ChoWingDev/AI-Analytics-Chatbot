@@ -148,7 +148,7 @@ def create_session(session_id: str, k: int = 5, db_path: str = "sessions.db"):
 
     past_turns = store.load_session(session_id)
     if past_turns:
-        print(f"Resuming session '{session_id}' — {len(past_turns)} past turns found.")
+        print(f"Resuming session '{session_id}' - {len(past_turns)} past turns found.")
         for turn in past_turns[-k:]:
             memory.add_turn(turn.human, turn.ai)
     else:

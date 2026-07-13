@@ -246,3 +246,6 @@ xxhash==3.7.0
 yarl==1.23.0
 zipp==3.23.1
 zstandard==0.25.0
+
+# Data provisioning — scripts/build_db.py (Kaggle download of TheLook CSVs)
+kagglehub>=0.3.0

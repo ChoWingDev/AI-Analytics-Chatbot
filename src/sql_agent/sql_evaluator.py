@@ -87,7 +87,10 @@ def evaluate_sql(question, expected_sql, generated_sql, conn):
             "question": question,
             "passed": False,
             "stage": "generated_sql_execution",
-            "reason": f"Expected SQL Error: {str(e)}"
+            # This said "Expected SQL Error" — a copy-paste bug that blamed the
+            # ground truth for a failure in the GENERATED query, sending you to
+            # debug the wrong file.
+            "reason": f"Generated SQL Error: {str(e)}"
         }
 
     comparison_result = evaluate_sql_result(expected_df, generated_df)

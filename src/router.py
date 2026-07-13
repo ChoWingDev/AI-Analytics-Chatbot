@@ -106,9 +106,39 @@ CRITICAL — never fabricate data:
 - If a section contains an error (e.g. starts with "[SQL error]" or "[RAG error]"),
   says there is no data, returns no rows, or has no usable numbers, set that
   side's value to "N/A" and status to "N/A". Do NOT invent a number.
-- If the internal company data is unavailable, say so plainly in the summary
-  instead of guessing, and make the action items about restoring/checking that data.
+- ONLY when the internal company data is missing or errored: say so plainly in the
+  summary and make the action items about restoring/checking that data. If the
+  company data IS present, never suggest "restoring" it — give real business actions.
+- Be internally consistent: if you cite an industry figure in the summary, put that
+  same figure in industry_avg. If industry_avg is "N/A", do not compare against a
+  number in the summary. Set status to "N/A" whenever either side is "N/A".
 """
+
+
+def _is_missing(value) -> bool:
+    """True when a comparison cell carries no usable number."""
+    if value is None:
+        return True
+    v = str(value).strip().lower()
+    return v in ("", "n/a", "na", "none", "unknown", "not available", "not provided")
+
+
+def _enforce_consistency(report: "PMReport") -> "PMReport":
+    """
+    Enforce the comparison invariant in CODE, not in the prompt.
+
+    The merge prompt asks the model to set status to "N/A" when either side of a
+    comparison is missing. It does not reliably obey: it emitted
+    `industry_avg: "N/A"` alongside `status: "Below average"` — claiming a
+    comparison it had no benchmark for.
+
+    A prompt is a suggestion; this is a guarantee. If either side is missing,
+    there is no comparison to report, so the status is N/A. Full stop.
+    """
+    for row in report.comparison_table:
+        if _is_missing(row.get("your_value")) or _is_missing(row.get("industry_avg")):
+            row["status"] = "N/A"
+    return report
 
 
 def _extract_json(text: str) -> str:
@@ -221,7 +251,7 @@ class RouterAgent:
 
         try:
             data = json.loads(_extract_json(raw))
-            return PMReport(**data)
+            return _enforce_consistency(PMReport(**data))
         except Exception:
             # Graceful fallback if the model didn't return clean JSON.
             sources = []

@@ -1,3 +1,44 @@
-passed,reason,question,expected_shape,generated_shape
-True,Result matched,What is the total revenue in 2021,,
-False,Shape mismatch,What are the top 5 product categories by revenue in 202101?,"(5, 2)","(26, 2)"
+question,metric,pipeline_error,scored,result_passed,result_reason,rules_passed,failed_checks,unknown_checks,generated_sql,expected_sql
+What is the total revenue in 2022?,revenue,,True,True,Result matched,True,,,"SELECT ROUND(SUM(order_revenue), 2) AS revenue
+FROM mart_order_summary
+WHERE status = 'Complete'
+  AND STRFTIME('%Y', order_created_at) = '2022';","SELECT ROUND(SUM(order_revenue), 2) AS revenue FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'"
+What is the total revenue from completed orders all time?,revenue,,True,True,Result matched,True,,,"SELECT ROUND(SUM(order_revenue), 2) AS revenue
+FROM mart_order_summary
+WHERE status = 'Complete';","SELECT ROUND(SUM(order_revenue), 2) AS revenue FROM mart_order_summary WHERE status = 'Complete'"
+What are the top 5 product categories by revenue in 202101?,category_revenue,,True,True,Result matched,True,,,"SELECT category, ROUND(SUM(gross_sales), 2) AS category_revenue
+FROM mart_product_sales
+WHERE STRFTIME('%Y%m', order_date) = '202101'
+GROUP BY category
+ORDER BY category_revenue DESC
+LIMIT 5;","SELECT category, ROUND(SUM(gross_sales), 2) AS category_revenue FROM mart_product_sales WHERE STRFTIME('%Y%m', order_date) = '202101' GROUP BY category ORDER BY category_revenue DESC LIMIT 5"
+What is the average order value in 2022?,aov,,True,True,Result matched,True,,,"SELECT CAST(SUM(order_revenue) AS REAL) / COUNT(DISTINCT order_id) AS aov
+FROM mart_order_summary
+WHERE status = 'Complete'
+  AND STRFTIME('%Y', order_created_at) = '2022';","SELECT ROUND(SUM(order_revenue) / COUNT(DISTINCT order_id), 2) AS aov FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'"
+What is the return rate in 2022?,return_rate,,True,True,Result matched,True,,,"SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate
+FROM mart_product_sales
+WHERE STRFTIME('%Y', order_date) = '2022';","SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate FROM mart_product_sales WHERE STRFTIME('%Y', order_date) = '2022'"
+What is our overall return rate?,return_rate,,True,True,Result matched,True,,,"SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate
+FROM mart_product_sales;","SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate FROM mart_product_sales"
+How many active users purchased in the last 90 days?,active_users,,True,True,Result matched,True,,,"SELECT COUNT(DISTINCT user_id) AS active_users
+FROM mart_user_summary
+WHERE recency <= 90;",SELECT COUNT(DISTINCT user_id) AS active_users FROM mart_user_summary WHERE recency <= 90
+What is the ROI on completed orders in 2022?,roi,,True,True,Result matched,True,,,"SELECT ROUND(CAST(SUM(gross_profit) AS REAL) * 100.0 / SUM(order_cost), 2) AS roi
+FROM mart_order_summary
+WHERE status = 'Complete'
+  AND STRFTIME('%Y', order_created_at) = '2022';","SELECT ROUND(SUM(gross_profit) * 100.0 / SUM(order_cost), 2) AS roi FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'"
+What is our customer churn rate?,churn_rate,,True,True,Result matched,True,,,"SELECT CAST(COUNT(CASE WHEN recency > 90 THEN 1 END) AS REAL) * 100.0 / COUNT(*) AS churn_rate
+FROM mart_user_summary
+WHERE frequency IS NOT NULL;","SELECT ROUND(COUNT(CASE WHEN recency > 90 THEN 1 END) * 100.0 / COUNT(*), 2) AS churn_rate FROM mart_user_summary WHERE frequency IS NOT NULL"
+How many new customers did we acquire in 2022?,new_customers,,True,True,Result matched,True,,,"SELECT COUNT(DISTINCT user_id) AS new_customers
+FROM mart_user_summary
+WHERE first_order_date IS NOT NULL
+  AND STRFTIME('%Y', first_order_date) = '2022';","SELECT COUNT(DISTINCT user_id) AS new_customers FROM mart_user_summary WHERE STRFTIME('%Y', first_order_date) = '2022'"
+What is the session conversion rate?,conversion_rate,,True,True,Result matched,True,,,"SELECT ROUND((CAST(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) AS REAL) / COUNT(DISTINCT session_id)) * 100.0, 2) AS conversion_rate
+FROM events;","SELECT ROUND(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / COUNT(DISTINCT session_id), 4) AS conversion_rate FROM events"
+What are the top 5 brands by revenue?,category_revenue,,True,True,Result matched,True,,,"SELECT brand, ROUND(SUM(gross_sales), 2) AS brand_revenue
+FROM mart_product_sales
+GROUP BY brand
+ORDER BY brand_revenue DESC
+LIMIT 5","SELECT brand, ROUND(SUM(gross_sales), 2) AS brand_revenue FROM mart_product_sales GROUP BY brand ORDER BY brand_revenue DESC LIMIT 5"

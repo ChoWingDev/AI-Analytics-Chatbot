@@ -1,27 +1,115 @@
 [
   {
-    "question": "What is the total revenue in 2021",
-    "expected_sql": "\nSELECT \n    ROUND(SUM(order_revenue),2) AS total_revenue \nFROM mart_order_summary\nWHERE strftime('%Y', order_created_at)='2021' AND order_returned_at IS NULL;\n",
-    "generated_sql": "\nSELECT\n    ROUND(SUM(order_revenue), 2) AS total_revenue\nFROM mart_order_summary\nWHERE strftime('%Y', order_created_at)='2021'\n  AND order_returned_at IS NULL;\n"
+    "question": "What is the total revenue in 2022?",
+    "metric": "revenue",
+    "expected_sql": "SELECT ROUND(SUM(order_revenue), 2) AS revenue FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'",
+    "required_sql_checks": [
+      "uses_completed_order_filter",
+      "uses_revenue_metric",
+      "uses_mart_order_summary_or_orders_order_items_fallback"
+    ]
+  },
+  {
+    "question": "What is the total revenue from completed orders all time?",
+    "metric": "revenue",
+    "expected_sql": "SELECT ROUND(SUM(order_revenue), 2) AS revenue FROM mart_order_summary WHERE status = 'Complete'",
+    "required_sql_checks": [
+      "uses_completed_order_filter",
+      "uses_revenue_metric",
+      "uses_mart_order_summary_or_orders_order_items_fallback"
+    ]
   },
   {
     "question": "What are the top 5 product categories by revenue in 202101?",
-    "expected_sql": "\nSELECT \n    category,\n    ROUND(SUM(gross_sales),2) AS total_revenue \nFROM mart_product_sales\nWHERE strftime('%Y%m', order_date) = '202101'\nGROUP BY category\nORDER BY total_revenue DESC\nLIMIT 5;\n",
-    "generated_sql": "\nSELECT \n    category,\n    ROUND(SUM(gross_sales),2) AS total_revenue \nFROM mart_product_sales\nWHERE strftime('%Y%m', order_date) = '202101'\nGROUP BY category\nORDER BY total_revenue DESC;\n"
+    "metric": "category_revenue",
+    "expected_sql": "SELECT category, ROUND(SUM(gross_sales), 2) AS category_revenue FROM mart_product_sales WHERE STRFTIME('%Y%m', order_date) = '202101' GROUP BY category ORDER BY category_revenue DESC LIMIT 5",
+    "required_sql_checks": [
+      "groups_by_product_category",
+      "orders_by_revenue_desc",
+      "limits_to_top_5"
+    ]
   },
   {
-    "question": "How many active users purchased in the last 90 days?",
-    "expected_sql": "\nSELECT \n    COUNT(DISTINCT user_id) AS active_users \nFROM mart_user_segment\nWHERE customer_segment != \"Inactive Users\" AND recency <= '90';\n",
-    "generated_sql": "\nSELECT \n    COUNT(DISTINCT user_id) AS active_users \nFROM mart_user_segment\nWHERE customer_segment != \"Inactive Users\";\n"
-  },
-  {
-    "question": "What is the average order value in 2021? ",
-    "expected_sql": "\n    SELECT SUM(gross_sales)/SUM(total_orders)\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2021'\n",
-    "generated_sql": "\n    SELECT SUM(gross_sales)/SUM(total_orders)\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2021'\n"
+    "question": "What is the average order value in 2022?",
+    "metric": "aov",
+    "expected_sql": "SELECT ROUND(SUM(order_revenue) / COUNT(DISTINCT order_id), 2) AS aov FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'",
+    "required_sql_checks": [
+      "uses_completed_order_filter",
+      "uses_aov_formula_revenue_over_distinct_orders",
+      "uses_mart_order_summary_or_orders_order_items_fallback"
+    ]
   },
   {
     "question": "What is the return rate in 2022?",
-    "expected_sql": "\n    SELECT (SUM(returned_units) * 1.0) / SUM(units_sold) AS return_rate\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2022';\n",
-    "generated_sql": "\n    SELECT SUM(returned_units) AS return_rate\n    FROM mart_product_sales\n    WHERE strftime('%Y', order_date) = '2022';\n"
+    "metric": "return_rate",
+    "expected_sql": "SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate FROM mart_product_sales WHERE STRFTIME('%Y', order_date) = '2022'",
+    "required_sql_checks": [
+      "uses_preaggregated_return_columns",
+      "does_not_filter_product_mart_by_status"
+    ]
+  },
+  {
+    "question": "What is our overall return rate?",
+    "metric": "return_rate",
+    "expected_sql": "SELECT ROUND((SUM(returned_units) * 1.0) / SUM(units_sold), 4) AS return_rate FROM mart_product_sales",
+    "required_sql_checks": [
+      "uses_preaggregated_return_columns",
+      "does_not_filter_product_mart_by_status"
+    ]
+  },
+  {
+    "question": "How many active users purchased in the last 90 days?",
+    "metric": "active_users",
+    "expected_sql": "SELECT COUNT(DISTINCT user_id) AS active_users FROM mart_user_summary WHERE recency <= 90",
+    "required_sql_checks": [
+      "counts_distinct_users",
+      "uses_mart_user_segment_or_orders_fallback"
+    ]
+  },
+  {
+    "question": "What is the ROI on completed orders in 2022?",
+    "metric": "roi",
+    "expected_sql": "SELECT ROUND(SUM(gross_profit) * 100.0 / SUM(order_cost), 2) AS roi FROM mart_order_summary WHERE status = 'Complete' AND STRFTIME('%Y', order_created_at) = '2022'",
+    "required_sql_checks": [
+      "uses_roi_formula_gross_profit_over_order_cost",
+      "uses_completed_order_filter"
+    ]
+  },
+  {
+    "question": "What is our customer churn rate?",
+    "metric": "churn_rate",
+    "expected_sql": "SELECT ROUND(COUNT(CASE WHEN recency > 90 THEN 1 END) * 100.0 / COUNT(*), 2) AS churn_rate FROM mart_user_summary WHERE frequency IS NOT NULL",
+    "required_sql_checks": [
+      "uses_inactivity_based_churn_definition",
+      "uses_default_90_day_churn_window"
+    ]
+  },
+  {
+    "question": "How many new customers did we acquire in 2022?",
+    "metric": "new_customers",
+    "expected_sql": "SELECT COUNT(DISTINCT user_id) AS new_customers FROM mart_user_summary WHERE STRFTIME('%Y', first_order_date) = '2022'",
+    "required_sql_checks": [
+      "counts_distinct_users",
+      "uses_first_completed_order_date"
+    ]
+  },
+  {
+    "question": "What is the session conversion rate?",
+    "metric": "conversion_rate",
+    "expected_sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / COUNT(DISTINCT session_id), 4) AS conversion_rate FROM events",
+    "required_sql_checks": [
+      "uses_distinct_sessions_denominator",
+      "uses_converted_sessions_numerator",
+      "uses_events_as_primary_source"
+    ]
+  },
+  {
+    "question": "What are the top 5 brands by revenue?",
+    "metric": "category_revenue",
+    "expected_sql": "SELECT brand, ROUND(SUM(gross_sales), 2) AS brand_revenue FROM mart_product_sales GROUP BY brand ORDER BY brand_revenue DESC LIMIT 5",
+    "required_sql_checks": [
+      "orders_by_revenue_desc",
+      "limits_to_top_5"
+    ]
   }
 ]

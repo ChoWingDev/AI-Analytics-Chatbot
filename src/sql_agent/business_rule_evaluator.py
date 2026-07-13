@@ -23,17 +23,21 @@ RULES = {
         or "gross_sales" in sql
     ),
 
-    "uses_returned_order_definition": lambda sql: (
-        "status = 'returned'" in sql
-        or 'status = "returned"' in sql
-        or "returned_at" in sql
-        or "order_returned_at" in sql
+    # Return-rate rules.
+    #
+    # These previously REQUIRED status='Returned' / order_returned_at. That was
+    # wrong: return_rate is sourced from mart_product_sales, which is
+    # pre-aggregated and has neither column. The old rules would have passed the
+    # exact SQL that crashes the pipeline, and failed the correct SQL. They now
+    # assert the pre-aggregated columns are used, and that the product mart is
+    # NOT filtered by order-level status.
+    "uses_preaggregated_return_columns": lambda sql: (
+        "returned_units" in sql and "units_sold" in sql
     ),
 
-    "uses_return_status_or_returned_at": lambda sql: (
-        "status = 'returned'" in sql
-        or "returned_at" in sql
-        or "order_returned_at" in sql
+    "does_not_filter_product_mart_by_status": lambda sql: not (
+        "mart_product_sales" in sql
+        and ("status =" in sql or "status=" in sql or "order_returned_at" in sql)
     ),
 
     # metric formulas
@@ -259,56 +263,11 @@ def load_ground_truth(path):
         return json.load(f)
 
 
-if __name__ == "__main__":
-
-    ground_truth = load_ground_truth(
-        "/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/AI-Analytics-Copilot/config/ground_truth.json"
-    )
-
-    pipeline = TextToSQLPipeline(
-        glossary_path="/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/AI-Analytics-Copilot/config/glossary.json",
-        db_path="/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/Competitive-Intelligence-Internal-Analytics-System/data/database/thelook_ecommerce.db"
-    )
-
-    results = []
-
-    for test_case in ground_truth["test_cases"][:1]:
-
-        if test_case.get("category") != "sql":
-            continue
-
-        question = test_case["question"]
-        required_checks = test_case.get("required_sql_checks", [])
-
-        output = pipeline.run(question)
-
-        print("\nQUESTION:")
-        print(question)
-
-        print("\nSQL:")
-        print(output["sql"])
-
-        print("\nCHECKS:")
-        print(required_checks)
-
-        evaluation = evaluate_business_rules(
-            question=question,
-            generated_sql=output["sql"],
-            required_checks=required_checks
-        )
-        print("\nFAILED CHECKS:")
-        print(evaluation["failed_checks"])
-
-        results.append(evaluation)
-
-    results_df = pd.DataFrame(results)
-
-    print(results_df)
-
-    summary = {
-        "total_cases": len(results_df),
-        "passed_cases": int(results_df["passed"].sum()),
-        "pass_rate": float(results_df["passed"].mean())
-    }
-
-    print(summary)
+# This module is a library. The old __main__ here had hardcoded absolute paths
+# and was capped at one test case, so it could not run outside the original
+# author's machine. Use the unified runner instead:
+#
+#     python scripts/run_eval.py
+#
+# which grades every case in data/evaluation/test_cases.json with BOTH the
+# result-based evaluator (sql_evaluator.evaluate_sql) and these business rules.

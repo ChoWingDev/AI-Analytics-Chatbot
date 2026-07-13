@@ -1,6 +1,8 @@
 {
-  "total_case": 2,
-  "passed_cases": 1,
-  "failed_cases": 1,
-  "pass_rate": 0.5
+  "total_cases": 12,
+  "scored_cases": 12,
+  "unscored_api_errors": 0,
+  "execution_accuracy": 1.0,
+  "business_rule_pass_rate": 1.0,
+  "passed": 12
 }

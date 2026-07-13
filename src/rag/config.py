@@ -14,7 +14,15 @@ CHROMA_COLLECTION = "ecommerce_reports"
 
 # Models
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL_ID    = "Qwen/Qwen2.5-7B-Instruct"
+
+# General-purpose model: routing, RAG answers, and the merged PM report (prose + JSON).
+LLM_MODEL_ID     = "Qwen/Qwen2.5-7B-Instruct"
+
+# SQL specialist. Same provider (HuggingFace), so the "one provider" story holds —
+# we just use the right model for the job. The general model repeatedly invented
+# columns and emitted multiple statements; a code-tuned model is the cheapest
+# lever on Text-to-SQL accuracy.
+SQL_MODEL_ID     = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
 # Retrieval
 RETRIEVER_K = 5

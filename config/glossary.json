@@ -3,9 +3,10 @@
     "purpose": "Business glossary for ecommerce SQL/RAG agent metric definitions",
     "sql_dialect": "SQLite",
     "design_principle": "Mart-first semantic layer; use curated marts/views to prevent multi-item duplication. Never mix base tables when an analytical view is present.",
+    "integrity_rule": "Every metric's business_logic MUST only reference columns that exist on its preferred_source. A rule that names a column absent from the mart will cause the generated SQL to fail.",
     "source_priority": [
-      "1. mart_order_summary: Order-level KPIs (AOV, Revenue, Margin, Return Rate)",
-      "2. mart_product_sales: Category, Brand, and SKU level performance (Complete sales only)",
+      "1. mart_order_summary: Order-level KPIs (AOV, Revenue, Margin, ROI)",
+      "2. mart_product_sales: Category, Brand, and SKU level performance, and return rates (Complete sales only)",
       "3. mart_daily_sales: Daily time-series trends and aggregation",
       "4. mart_user_summary / mart_user_segment: User lifecycle, segments, and RFM",
       "5. base tables (events, order_items): Use ONLY when traffic funnels or item-level tracking is explicitly requested"
@@ -24,14 +25,13 @@
         "order_revenue"
       ],
       "fallback_sources": [
-        "mart_daily_sales",
-        "order_items"
+        "mart_daily_sales"
       ],
       "sql_formula": "SUM(order_revenue)",
       "business_logic": [
-        "CRITICAL: Always apply the filter: status = 'Complete' on mart_order_summary to reflect actual realized revenue.",
+        "CRITICAL: Always apply the filter status = 'Complete' on mart_order_summary to reflect actual realized revenue.",
         "For daily or overall high-level trends without dimensions, mart_daily_sales.gross_sales can be used directly as it is already filtered to Complete.",
-        "Never use products.retail_price for realized revenue; use order_items.sale_price if forced to use base tables."
+        "Date filters must be applied to order_created_at on mart_order_summary."
       ],
       "calculability_status": "calculable"
     },
@@ -46,13 +46,11 @@
         "status",
         "order_created_at"
       ],
-      "fallback_sources": [
-        "mart_daily_sales"
-      ],
-      "sql_formula": "sum(order_revenue)/COUNT(DISTINCT order_id)",
+      "sql_formula": "SUM(order_revenue) / COUNT(DISTINCT order_id)",
       "business_logic": [
         "CRITICAL: Always filter by status = 'Complete' when calculating AOV from mart_order_summary.",
         "DO NOT use the AVG() function directly.",
+        "CRITICAL: NEVER compute AOV from mart_product_sales. That mart is at product-date grain, so SUM(total_orders) counts an order once per product it contains and inflates the denominator, which understates AOV.",
         "Do not join to order_items for AOV calculation to avoid row inflation and double counting."
       ],
       "calculability_status": "calculable"
@@ -69,26 +67,87 @@
       ],
       "sql_formula": "SUM(gross_sales)",
       "business_logic": [
-        "CRITICAL: Use mart_product_sales for any category, brand, or product performace query. DO NOT manually join order_items and products.",
-        "mart_product_sales is already pre-filtered to status = 'Complete' by definition. Do not append status filters to this view.",
+        "CRITICAL: Use mart_product_sales for any category, brand, or product performance query. DO NOT manually join order_items and products.",
+        "mart_product_sales.gross_sales is already pre-filtered to Complete items by definition. Do NOT append a status filter to this view.",
         "Date filters must be applied to order_date (which represents DATE(orders.created_at))."
       ],
       "calculability_status": "calculable"
     },
     "return_rate": {
       "business_name": "Return Rate",
-      "definition": "Percentage of total orders that were returned by customers.",
-      "grain": "order-level",
+      "definition": "Share of sold units that were returned, measured on the product sales mart.",
+      "grain": "product-date-level",
       "preferred_source": "mart_product_sales",
       "preferred_source_fields": [
-        "order_id",
+        "order_date",
+        "category",
         "returned_units",
         "units_sold"
       ],
-      "sql_formula": "SUM(returned_units) * 1.0) / SUM(units_sold",
+      "sql_formula": "(SUM(returned_units) * 1.0) / SUM(units_sold)",
       "business_logic": [
-        "The denominator must include ALL orders (not just completed ones) within the specified timeframe to see the accurate standard return rate.",
-        "An order is classified as returned if status = 'Returned' or order_returned_at IS NOT NULL."
+        "CRITICAL: mart_product_sales is PRE-AGGREGATED. returned_units and units_sold are already computed per product per day.",
+        "CRITICAL: mart_product_sales has NO status column and NO order_returned_at column. NEVER filter this mart by status = 'Returned' or by order_returned_at — those columns do not exist here and the query will fail.",
+        "Compute the rate as a ratio of the two pre-aggregated columns: (SUM(returned_units) * 1.0) / SUM(units_sold).",
+        "Multiply by 100 only if the question explicitly asks for a percentage.",
+        "Date filters must be applied to order_date."
+      ],
+      "calculability_status": "calculable"
+    },
+    "roi": {
+      "business_name": "Return on Investment (Order Profitability)",
+      "definition": "Gross profit earned per unit of order cost on completed orders, expressed as a percentage. This is product/order profitability ROI, NOT paid-media ROI.",
+      "grain": "order-level",
+      "preferred_source": "mart_order_summary",
+      "preferred_source_fields": [
+        "status",
+        "order_created_at",
+        "gross_profit",
+        "order_cost"
+      ],
+      "sql_formula": "SUM(gross_profit) * 100.0 / SUM(order_cost)",
+      "business_logic": [
+        "CRITICAL: Always filter by status = 'Complete'.",
+        "This is order profitability, not marketing ROI. There is NO ad spend or campaign cost table in this database.",
+        "If the question asks for marketing ROI, ROAS, or CAC, state that it is not calculable without a spend table. Do NOT substitute order_cost for ad spend.",
+        "Date filters must be applied to order_created_at."
+      ],
+      "calculability_status": "calculable"
+    },
+    "churn_rate": {
+      "business_name": "Churn Rate",
+      "definition": "Percentage of purchasing customers who have become inactive, i.e. whose most recent order is older than the inactivity window (default 90 days).",
+      "grain": "user-level",
+      "preferred_source": "mart_user_summary",
+      "preferred_source_fields": [
+        "user_id",
+        "recency",
+        "frequency",
+        "last_order_date"
+      ],
+      "sql_formula": "COUNT(CASE WHEN recency > 90 THEN 1 END) * 100.0 / COUNT(*)",
+      "business_logic": [
+        "CRITICAL: Churn here is INACTIVITY-based, not cancellation-based. Do NOT treat status = 'Cancelled' or 'Returned' orders as churn.",
+        "recency is precomputed on mart_user_summary as the number of days between the user's last order and the latest order in the dataset.",
+        "Denominator must include ONLY users who have actually purchased: filter frequency IS NOT NULL (users who never ordered have NULL recency and are prospects, not churn).",
+        "Default inactivity window is 90 days unless the question states otherwise."
+      ],
+      "calculability_status": "calculable"
+    },
+    "new_customers": {
+      "business_name": "New Customers",
+      "definition": "Count of distinct customers whose first-ever order falls inside the requested time period.",
+      "grain": "user-level",
+      "preferred_source": "mart_user_summary",
+      "preferred_source_fields": [
+        "user_id",
+        "first_order_date"
+      ],
+      "sql_formula": "COUNT(DISTINCT user_id)",
+      "business_logic": [
+        "CRITICAL: Define a new customer by first_order_date falling within the requested period. Apply the time filter to first_order_date.",
+        "CRITICAL: DO NOT use customer_type = 'New'. That column flags users whose first order was within 30 days of the DATASET's start date, not the requested period, and it matches only a couple dozen users.",
+        "Users who never ordered have a NULL first_order_date and must be excluded."
       ],
       "calculability_status": "calculable"
     },
@@ -99,16 +158,18 @@
       "preferred_source": "mart_user_summary",
       "preferred_source_fields": [
         "user_id",
-        "last_order_date"
+        "recency",
+        "last_order_date",
+        "frequency"
       ],
       "fallback_sources": [
-        "orders"
+        "mart_user_segment"
       ],
       "sql_formula": "COUNT(DISTINCT user_id)",
       "business_logic": [
-        "A user is considered active in a given period if their last_order_date falls within that period.",
-        "Users with no orders have NULL last_order_date; ensure they are excluded via IS NOT NULL filters.",
-        "For dynamic 'last X days' filters, find the reference point using (SELECT MAX(last_order_date) FROM mart_user_summary) instead of hardcoding 'now'."
+        "recency is precomputed as days since the user's last order relative to the latest order in the dataset. For a 'last N days' window, filter recency <= N. This is simpler and safer than recomputing dates.",
+        "Users with no orders have a NULL recency and last_order_date; they must be excluded.",
+        "Do NOT count users from the users table directly — that counts registrations, not purchasers."
       ],
       "calculability_status": "calculable"
     },
@@ -126,8 +187,10 @@
       "sql_formula": "COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / COUNT(DISTINCT session_id)",
       "business_logic": [
         "Since no traffic funnel mart view exists yet, the base table 'events' must be used.",
-        "Do NOT inner join 'events' to the 'users' table, as anonymous traffic (missing user_id) constitutes 46.4% of total volume and must not be dropped.",
-        "Total sessions = COUNT(DISTINCT session_id). Converted sessions = sessions containing an event_type = 'purchase'."
+        "Do NOT inner join 'events' to the 'users' table, as anonymous traffic (missing user_id) is a large share of total volume and must not be dropped.",
+        "Total sessions = COUNT(DISTINCT session_id). Converted sessions = COUNT(DISTINCT session_id) among rows with event_type = 'purchase'.",
+        "CRITICAL: The numerator MUST use COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END). Without DISTINCT you count purchase EVENTS rather than converted SESSIONS, which inflates the rate (it can even exceed 100%).",
+        "CRITICAL: Only apply a date filter if the question actually asks for a time period. If no period is requested, compute over all events — do NOT restrict to the latest day."
       ],
       "calculability_status": "calculable_with_event_logic"
     }

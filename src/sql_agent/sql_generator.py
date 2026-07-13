@@ -1,13 +1,15 @@
-from src.llm import get_llm
+from src.llm import get_sql_llm
 
 
 class SQLGenerator:
-    """Generates SQLite queries from an enriched prompt using the shared HF LLM."""
+    """Generates SQLite queries from an enriched prompt using the code-tuned HF model."""
 
     def __init__(self):
-        # Tier-1: standardized on HuggingFace (was Gemini). Deterministic-ish,
-        # enough headroom for multi-line SQL with CTEs.
-        self.llm = get_llm(max_new_tokens=512, temperature=0.0)
+        # Same provider (HuggingFace), but a SQL-specialist model. The general
+        # chat model kept inventing columns and answering with several statements;
+        # swapping in a code-tuned model is the cheapest lever on SQL accuracy.
+        # temperature=0.0 — we want the same question to yield the same query.
+        self.llm = get_sql_llm(max_new_tokens=512, temperature=0.0)
 
     def generate_sql(self, prompt):
         response = self.llm.invoke(prompt)

@@ -17,8 +17,8 @@ class SQLExecutor:
         )
     
 if __name__ == "__main__":
-    executor = SQLExecutor(
-    "/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/Competitive-Intelligence-Internal-Analytics-System/data/database/thelook_ecommerce.db"
-    )
+    from .config import DB_PATH
+
+    executor = SQLExecutor(DB_PATH)
     result = executor.execute("SELECT COUNT(*) FROM orders")
     print(result)

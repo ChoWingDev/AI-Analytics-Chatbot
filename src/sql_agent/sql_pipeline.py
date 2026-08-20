@@ -2,15 +2,14 @@ from .retriever import GlossaryRetriever
 from .prompt_builder import PromptBuilder
 from .sql_generator import SQLGenerator
 from .sql_executor import SQLExecutor
-from .sql_evaluator import evaluate_sql
 from .config import GLOSSARY_PATH, DB_PATH
 
 class TextToSQLPipeline:
-    def __init__(self, glossary_path, db_path):
-        self.retriever = GlossaryRetriever(glossary_path=GLOSSARY_PATH, db_path=DB_PATH)
+    def __init__(self, glossary_path=GLOSSARY_PATH, db_path=DB_PATH):
+        self.retriever = GlossaryRetriever(glossary_path=glossary_path, db_path=db_path)
         self.prompt_builder = PromptBuilder()
         self.sql_generator = SQLGenerator()
-        self.sql_executor = SQLExecutor(db_path=DB_PATH)
+        self.sql_executor = SQLExecutor(db_path=db_path)
 
     def run(self, question):
 
@@ -34,13 +33,10 @@ class TextToSQLPipeline:
         }
     
 if __name__ == "__main__":
-    pipeline = TextToSQLPipeline(
-        glossary_path = "/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/AI-Analytics-Copilot/config/glossary.json",
-        db_path="/Users/chowingchan/Desktop/Project/AI-Analytics-Copilot/Competitive-Intelligence-Internal-Analytics-System/data/database/thelook_ecommerce.db"
-    )
+    pipeline = TextToSQLPipeline()
 
     output = pipeline.run("What is total revenue in last 30 days?")
-    
+
     print("\n===== GENERATED SQL =====")
     print(output["sql"])
 

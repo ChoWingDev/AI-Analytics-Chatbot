@@ -97,48 +97,62 @@ This architecture improves:
 # 📂 Repository Structure
 
 ```text
-ai-analytics-copilot/
-│
-├── config/
-│   ├── glossary.json
-│   └── settings.yaml
-│
-├── data/
-│   ├── database/
-│   │   └── thelook_ecommerce.db
-│   │
-│   ├── documents/
-│   │   └── market_reports/
-│   │
-│   ├── vectorstore/
-│   │
-│   └── evaluation/
-│       └── test_cases.json
-│
-├── notebooks/
-│   ├── 01_data_wrangling.ipynb
-│   ├── 02_load_clean_to_sqlite.ipynb
-│   ├── 03_create_marts.ipynb
-│   ├── 04_data_mart_validation.ipynb
-│   └── 05_sql_evaluator_prototype.ipynb
-│
-├── outputs/
-│   ├── sql_evaluation_result.csv
-│   └── sql_evaluation_summary.json
-│
-├── src/
-│   ├── router.py
-│   ├── text_to_sql.py
-│   ├── advanced_rag.py
-│   ├── sql_evaluator.py
-│   ├── merge_layer.py
-│   └── utils.py
+AI-Analytics-Chatbot/
 │
 ├── app/
-│   └── main.py
+│   ├── app.py                  # SQL-only CLI loop
+│   └── copilot.py              # unified copilot (router → SQL + RAG → PM report)
 │
-├── README.md
-└── requirements.txt
+├── src/
+│   ├── llm.py                  # shared HuggingFace chat + embedding providers
+│   ├── router.py               # route classification, parallel execution, merge
+│   │
+│   ├── sql_agent/
+│   │   ├── config.py           # canonical paths (glossary, database, test cases)
+│   │   ├── retriever.py        # glossary metric retrieval + live schema lookup
+│   │   ├── prompt_builder.py   # metric/schema/time-rule prompt assembly
+│   │   ├── sql_generator.py    # LLM call + SQL extraction
+│   │   ├── sql_executor.py     # SQLite execution
+│   │   ├── sql_pipeline.py     # retrieve → prompt → generate → execute
+│   │   ├── sql_evaluator.py    # result comparison
+│   │   └── accuracy_report.py  # end-to-end benchmark runner
+│   │
+│   └── rag/
+│       ├── config.py           # models, chunk sizes, paths
+│       ├── parsing.py          # PDF parsing + metadata tagging
+│       ├── vectorstore.py      # parent/child chunking, Chroma
+│       ├── retrieval.py        # hybrid BM25 + vector with RRF fusion
+│       ├── chain.py            # RAG prompt + chain assembly
+│       ├── memory.py           # conversation window + SQLite persistence
+│       ├── clarification.py    # vague-question detection
+│       ├── conversation.py     # multi-turn loop
+│       └── main.py             # RAG-only demo
+│
+├── config/
+│   └── glossary.json           # KPI definitions, formulas, business rules
+│
+├── data/
+│   ├── database/               # thelook_ecommerce.db (built, gitignored)
+│   ├── reports/                # 12 annual + industry PDFs
+│   ├── evaluation/
+│   │   └── test_cases.json     # benchmark questions + expected SQL
+│   └── processed/              # sessions.db (created at runtime)
+│
+├── scripts/
+│   └── build_db.py             # reproducible database builder
+│
+├── tests/
+│   ├── test_extract_sql.py
+│   ├── test_sql_evaluator.py
+│   └── test_glossary_schema.py # glossary ↔ live schema consistency
+│
+├── notebooks/                  # historical exploration (01–05)
+├── outputs/                    # evaluation reports
+│
+├── requirements.txt
+├── requirements-dev.txt
+├── .python-version
+└── README.md
 ```
 
 ---
@@ -167,15 +181,15 @@ A custom SQL evaluation framework was developed to benchmark and validate AI-gen
 
 ## Current Evaluation Features
 
-* Ground truth SQL benchmarking
-* Result-based SQL validation
-* Shape / column / value comparison
-* Pass / fail scoring
-* Benchmark accuracy reporting
-* JSON / CSV evaluation export
-* SQL execution error tracing
-* Semantic business logic validation
-* Required SQL pattern checking (in progress)
+* Ground truth SQL benchmarking (`src/sql_agent/accuracy_report.py`)
+* Result-based validation: equivalent SQL passes, identical text is not required
+* Shape check, then per-column comparison — numeric with tolerance, text exact
+* Pass / fail scoring with execution-error tracing
+* CSV report written to `outputs/`
+* Glossary ↔ live schema consistency checks (`tests/test_glossary_schema.py`)
+
+Semantic business-rule validation was prototyped and removed; it is listed
+under Future Improvements rather than described as working.
 
 ---
 
@@ -203,23 +217,19 @@ A benchmark dataset was manually created to evaluate Text-to-SQL performance acr
 
 ## Coverage Areas
 
-* KPI aggregation
-* ranking queries
-* time filtering
-* segmentation logic
-* product analytics
-* customer analytics
-* return analysis
-* profitability analysis
+Five cases in `data/evaluation/test_cases.json`, covering KPI aggregation
+(revenue, AOV), ranking with grouping (top categories), time filtering,
+customer activity windows, and return analysis.
 
-Each benchmark case may contain:
+Each case contains:
 
 * natural language question
-* business metric mapping
-* expected SQL
-* required SQL checks
-* generated SQL
-* evaluation results
+* expected SQL, derived from `config/glossary.json` and tagged with
+  `expected_sql_source`
+
+The runner executes the expected and generated SQL against the same database
+and compares results, so it measures whether the pipeline implements the
+glossary — not whether the glossary is business-correct.
 
 ---
 
@@ -283,39 +293,107 @@ Analytics marts and KPI standardization were designed to improve:
 
 # 🚀 Getting Started
 
-## 1. Clone Repository
+## 1. Requirements
+
+Python **3.11–3.13**. Not 3.14: every published version of `unstructured`,
+which parses the report PDFs, requires `<3.14`. `.python-version` pins 3.13 for
+`uv` and `pyenv` users.
 
 ```bash
-git clone https://github.com/yourusername/ai-analytics-copilot.git
-cd ai-analytics-copilot
+git clone https://github.com/ChoWingDev/AI-Analytics-Chatbot.git
+cd AI-Analytics-Chatbot
 ```
 
 ---
 
-## 2. Create Environment
+## 2. Environment
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
----
-
-## 3. Install Requirements
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ---
 
-## 4. Launch Notebook Environment
+## 3. Credentials
 
 ```bash
-jupyter notebook
+cp .env.example .env
 ```
 
+Then fill in:
+
+| variable | where to get it | needed for |
+|---|---|---|
+| `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (Read scope) | every LLM call |
+| `KAGGLE_USERNAME`, `KAGGLE_KEY` | [kaggle.com/settings/account](https://www.kaggle.com/settings/account) → Create New Token | building the database |
+
+Kaggle credentials are only needed for the download; `build_db.py --csv-dir`
+accepts CSVs you already have.
+
 ---
+
+## 4. Build the database
+
+```bash
+python scripts/build_db.py
+```
+
+Downloads TheLook, loads 7 base tables (~2.4M events rows), and builds the 5
+analytics marts. Produces roughly 528 MB at
+`data/database/thelook_ecommerce.db`. Takes a few minutes.
+
+---
+
+## 5. Run
+
+```bash
+python -m app.copilot     # unified copilot: internal KPIs + industry reports
+python -m app.app         # SQL-only loop
+python -m src.rag.main    # RAG-only demo
+```
+
+The first run that touches RAG parses all 12 PDFs and embeds ~105k chunks on
+CPU — around 15 minutes. Results are cached to `data/parsed_docs.pkl` and
+`chroma_db/`, so later runs start in seconds.
+
+---
+
+## 6. Tests and benchmarks
+
+```bash
+pip install -r requirements-dev.txt
+pytest                                    # unit tests
+python -m src.sql_agent.accuracy_report   # end-to-end Text-to-SQL benchmark
+```
+
+`tests/test_glossary_schema.py` checks every glossary metric against the live
+database schema, and skips if the database has not been built.
+
+---
+
+## ⚠️ A note on the data
+
+`scripts/build_db.py` pulls the Kaggle mirror
+`mustafakeser4/looker-ecommerce-bigquery-dataset`. TheLook is synthetic and
+regenerated over time, so each mirror is a different snapshot — **this is not
+the same data the project's original numbers came from.** The same query for
+January 2021 category revenue returns 4,355.92 for Outerwear & Coats today
+versus 7,506.91 originally, and the difference is not a constant factor.
+
+Any figure quoted in this README, the notebooks, or the debugging log below
+predates the current snapshot. `outputs/sql_evaluation_result.csv` and
+`src/sql_agent/sql_accuracy_report.csv` are kept in the repo as the record of
+the original dataset's values.
+
+The benchmark in `data/evaluation/test_cases.json` is unaffected: it executes
+expected and generated SQL against the *same* database and compares results,
+so it measures whether the pipeline implements `config/glossary.json` — not
+whether the glossary is business-correct.
+
+---
+
 # 🛠️ Debugging Log — AI Analytics Copilot (Text-to-SQL Pipeline)
 
 ## Overview
@@ -433,13 +511,16 @@ The priority order for context injection is:
 
 # 📊 Current Evaluation Results
 
-The evaluator currently supports:
+Text-to-SQL benchmark: **5 / 5** cases pass against the current snapshot
+(`python -m src.sql_agent.accuracy_report`).
 
-* SQL execution benchmarking
-* batch SQL evaluation
-* benchmark pass/fail reporting
-* JSON/CSV export
-* semantic SQL validation
+Unit tests: **31 passing** — SQL extraction, result comparison, and glossary /
+schema consistency.
+
+Read the benchmark number with its caveat: expected SQL is derived from the
+glossary the pipeline also reads, so a passing score means the pipeline
+faithfully implements the glossary. It is a consistency measure, not an
+independent accuracy measure.
 
 ---
 
@@ -451,6 +532,7 @@ The evaluator currently supports:
 * semantic KPI matching
 * ambiguity detection
 * production SQL sandboxing
+* semantic business-rule validation (prototyped, then removed)
 * Streamlit analytics dashboard
 * automated RAG evaluation
 * LLM-generated SQL benchmarking

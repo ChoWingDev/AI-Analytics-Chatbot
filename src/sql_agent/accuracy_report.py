@@ -16,7 +16,9 @@ import json
 import sqlite3
 import pandas as pd
 
-from .config import DB_PATH, GLOSSARY_PATH, TEST_CASE_PATH
+from pathlib import Path
+
+from .config import DB_PATH, GLOSSARY_PATH, PROJECT_ROOT, TEST_CASE_PATH
 from .sql_pipeline import TextToSQLPipeline
 from .sql_evaluator import evaluate_sql
 
@@ -48,8 +50,7 @@ def main():
 
     results = []
 
-    # Use only first 5 test cases for now to control Gemini quota
-    for case in test_cases[:5]:
+    for case in test_cases:
         question = case["question"]
 
         print("\n==============================")
@@ -91,12 +92,11 @@ def main():
     print(results_df[["question", "passed", "reason"]])
 
     # Save detailed report
-    results_df.to_csv(
-        "e2e_sql_accuracy_report.csv",
-        index=False
-    )
+    report_path = Path(PROJECT_ROOT) / "outputs" / "e2e_sql_accuracy_report.csv"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    results_df.to_csv(report_path, index=False)
 
-    print("\nReport saved: e2e_sql_accuracy_report.csv")
+    print(f"\nReport saved: {report_path}")
 
 
 if __name__ == "__main__":

@@ -101,7 +101,17 @@ def test_rules_do_not_reference_foreign_columns(metric_key, glossary, schema):
         pytest.skip("covered by test_preferred_source_exists")
 
     known_columns = set().union(*schema.values())
-    prose = " ".join(metric.get("business_logic", [])) + " " + str(metric.get("sql_formula", ""))
+    # Prohibitions ("do NOT use mart_product_sales.units_sold") must name the
+    # column they rule out, so only positive guidance is checked.
+    positive = [
+        rule for rule in metric.get("business_logic", [])
+        if not re.search(r"\b(do not|don't|never)\b", rule, re.IGNORECASE)
+    ]
+    prose = " ".join(positive) + " " + str(metric.get("sql_formula", ""))
+    # Qualified references name their own table (products.retail_price,
+    # order_items.sale_price) and are legitimate cross-table guidance. Only
+    # bare column names are read as "a column of the preferred source".
+    prose = re.sub(r"\b[a-z_]+\.[a-z_]+\b", " ", prose)
     mentioned = set(re.findall(r"\b[a-z_]{4,}\b", prose)) & known_columns
 
     foreign = sorted(mentioned - schema[source])

@@ -65,8 +65,12 @@ def main():
         if not question:
             continue
 
-        report = asyncio.run(agent.run(question))
-        render(report)
+        turn = asyncio.run(agent.run(question))
+        if turn.sql_error:
+            print(f"\n! {turn.sql_error}")
+        if turn.rag_error:
+            print(f"\n! {turn.rag_error}")
+        render(turn.report)
 
 
 if __name__ == "__main__":

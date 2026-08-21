@@ -144,10 +144,16 @@ def answer(agent: RouterAgent, question: str) -> dict:
     Routing and the merge step call the LLM provider outside the branch-level
     error handling in router.py, so a provider outage (an expired token, a
     depleted credit balance) would otherwise surface as a Streamlit traceback
-    covering the whole page. Report it as a message in the chat instead.
+    covering the whole page. Report it as a message in the chat instead --
+    with the exception type, since not every failure here is the provider.
     """
     try:
-        vague, clarification = is_vague(question, agent.memory.format_history())
+        # Heuristics only. The LLM stage classifies specific questions such as
+        # "What is our average order value in 2022?" as vague, which blocks the
+        # pipeline on exactly the questions it should run.
+        vague, clarification = is_vague(
+            question, agent.memory.format_history(), use_llm=False
+        )
         if vague:
             # Cheaper and more useful than running an 8-13s pipeline on "what about risks?".
             return {"clarification": clarification}
@@ -156,7 +162,7 @@ def answer(agent: RouterAgent, question: str) -> dict:
         with st.spinner(ROUTE_LABEL[route]):
             turn = asyncio.run(agent.run(question, route=route))
     except Exception as e:
-        return {"fatal": f"The model provider could not be reached: {e}"}
+        return {"fatal": f"{type(e).__name__}: {e}"}
 
     return {
         "report": turn.report,

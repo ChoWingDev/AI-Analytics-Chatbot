@@ -1,4 +1,43 @@
+import re
+
 from src.llm import get_llm
+
+# A fenced block, with or without a language tag: ```sql ... ```
+_FENCE = re.compile(r"```(?:sqlite|sql)?\s*(.*?)```", re.DOTALL)
+# Where a statement actually begins.
+_SQL_START = re.compile(r"\b(WITH|SELECT)\b", re.IGNORECASE)
+
+
+def extract_sql(response: str) -> str:
+    """
+    Pull the SQL statement out of an LLM response.
+
+    The prompt asks for SQL only, but models routinely wrap the query in
+    explanation anyway. Stripping fence markers alone left that prose in
+    place and handed it to SQLite verbatim, which fails with a DatabaseError
+    whose message is the model's paragraph.
+
+    Search order — first candidate containing a statement wins:
+      1. each fenced code block, in order
+      2. the whole response
+
+    Within a candidate, keep from the first SELECT/WITH up to and including
+    the first semicolon, which drops any commentary that follows the query.
+    A response with nothing recognisable is returned unchanged so the
+    executor surfaces a real error rather than silently running something else.
+    """
+    text = response.strip()
+
+    for candidate in [m.group(1) for m in _FENCE.finditer(text)] + [text]:
+        match = _SQL_START.search(candidate)
+        if not match:
+            continue
+        sql = candidate[match.start():]
+        if ";" in sql:
+            sql = sql[: sql.index(";") + 1]
+        return sql.strip()
+
+    return text
 
 
 class SQLGenerator:
@@ -15,15 +54,7 @@ class SQLGenerator:
         print("===== RAW RESPONSE =====")
         print(response)
 
-        sql = response.strip()
-
-        # IMPORTANT: remove longer code fence first
-        sql = sql.replace("```sqlite", "")
-        sql = sql.replace("```sql", "")
-        sql = sql.replace("```", "")
-        sql = sql.strip()
-
-        return sql
+        return extract_sql(response)
 
 
 from .retriever import GlossaryRetriever

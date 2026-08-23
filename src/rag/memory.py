@@ -13,6 +13,12 @@ Conversation memory with two layers:
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Resolved from this file, not the working directory, so every entry point
+# writes to the same place instead of dropping sessions.db wherever it ran.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SESSION_DB = str(PROJECT_ROOT / "data" / "processed" / "sessions.db")
 
 
 # ── Data structure ────────────────────────────────────────────────────────────
@@ -87,8 +93,9 @@ class SessionStore:
     conversation.
     """
 
-    def __init__(self, db_path: str = "sessions.db"):
+    def __init__(self, db_path: str = SESSION_DB):
         self.db_path = db_path
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
@@ -134,7 +141,7 @@ class SessionStore:
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-def create_session(session_id: str, k: int = 5, db_path: str = "sessions.db"):
+def create_session(session_id: str, k: int = 5, db_path: str = SESSION_DB):
     """
     Create a (memory, store) pair for a session.
 

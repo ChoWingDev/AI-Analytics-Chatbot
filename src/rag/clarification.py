@@ -33,7 +33,8 @@ ALWAYS_VAGUE = [
 ]
 
 
-def is_vague(question: str, chat_history: str = "") -> tuple[bool, str]:
+def is_vague(question: str, chat_history: str = "",
+             use_llm: bool = True) -> tuple[bool, str]:
     """
     Check if a question is too vague to retrieve meaningful results.
 
@@ -48,6 +49,11 @@ def is_vague(question: str, chat_history: str = "") -> tuple[bool, str]:
       chat_history — recent turns from ConversationMemory.format_history().
                      A short question with history may still be clear:
                      "How does that compare?" after a revenue answer is fine.
+      use_llm      — run stage 2. Set False to keep only the deterministic
+                     heuristics. Stage 2 is over-eager: it blocked
+                     "What is our average order value in 2022?" (8 words,
+                     entirely specific), so a caller that would rather run a
+                     good question than interrogate the user should skip it.
 
     Returns:
       (False, "")                    — clear, proceed with RAG
@@ -68,7 +74,7 @@ def is_vague(question: str, chat_history: str = "") -> tuple[bool, str]:
 
     # Stage 2: LLM check for borderline cases only
     # Skip if clearly specific (long questions rarely need clarification)
-    if word_count > 10:
+    if word_count > 10 or not use_llm:
         return False, ""
 
     llm = get_llm()

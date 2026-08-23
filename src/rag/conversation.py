@@ -131,5 +131,5 @@ def run_scripted_conversation(vectorstore, child_docs, session_id: str = "conver
 
     print(f"\n{'=' * 60}")
     print(f"Session complete — {memory.turn_count} turns in memory window.")
-    print(f"Full history saved to sessions.db (session_id='{session_id}')")
+    print(f"Full history saved to {store.db_path} (session_id='{session_id}')")
     print("=" * 60)

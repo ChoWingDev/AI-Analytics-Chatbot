@@ -26,9 +26,11 @@ import asyncio
 import json
 import os
 import re
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
+from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel
 
 from src.llm import get_llm
@@ -60,10 +62,45 @@ class RouteDecision(str, Enum):
 
 
 class PMReport(BaseModel):
+    """
+    Parsed contract for the merge step's JSON output. Deliberately narrow:
+    `PMReport(**data)` is built straight from the LLM response, so this must
+    contain only what the model is asked to produce. Evidence (DataFrames,
+    retrieved documents) travels alongside it in CopilotTurn instead.
+    """
     summary: str
     comparison_table: list[dict]  # [{"metric","your_value","industry_avg","status"}]
     action_items: list[str]
     data_sources: list[str]
+
+
+@dataclass
+class SqlOutcome:
+    """Result of the SQL branch. `.text` is what the merge prompt consumes."""
+    text: str
+    df: Any = None            # pandas DataFrame, kept for charting
+    sql: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class RagOutcome:
+    """Result of the RAG branch. `.text` is what the merge prompt consumes."""
+    text: str
+    docs: list = field(default_factory=list)
+    error: Optional[str] = None
+
+
+@dataclass
+class CopilotTurn:
+    """One answered question: the report plus the evidence behind it."""
+    report: PMReport
+    route: RouteDecision
+    sql: Optional[str] = None
+    sql_df: Any = None
+    rag_docs: list = field(default_factory=list)
+    sql_error: Optional[str] = None
+    rag_error: Optional[str] = None
 
 
 ROUTER_PROMPT = """You are a routing assistant for a Product Manager's data tool.
@@ -143,6 +180,7 @@ class RouterAgent:
         # RAG components (hybrid BM25 + vector over the report corpus)
         self.vectorstore = None
         self.child_docs = []
+        self._retriever = None  # unfiltered hybrid retriever, built once (see _get_retriever)
         self._build_rag()
 
         # Shared conversation memory (in-RAM window + SQLite persistence)
@@ -166,28 +204,63 @@ class RouterAgent:
         else:
             self.vectorstore, self.child_docs = create_vectorstore(docs)
 
+    def _get_retriever(self):
+        """
+        The unfiltered hybrid retriever, built once and reused.
+
+        BM25Retriever.from_documents re-indexes the whole 104k-chunk corpus on
+        every call (~0.9s). No caller passes year/doc_type filters, so one
+        instance serves every question.
+        """
+        if self._retriever is None:
+            self._retriever = create_retriever(self.vectorstore, self.child_docs)
+        return self._retriever
+
+    # ── Sessions ───────────────────────────────────────────────
+    def use_session(self, session_id: str, history_k: int = 5) -> None:
+        """
+        Point this agent at a different conversation.
+
+        Lets one expensively-built agent (vector store + glossary index) serve
+        several sessions. NOTE: the agent holds a single `self.memory`, so
+        concurrent sessions would interleave — this is safe for one user at a
+        time, not for a multi-user deployment.
+        """
+        self.memory, self.store, self.session_id = create_session(session_id, k=history_k)
+
     # ── Branch runners (sync; called via asyncio.to_thread) ──────────────────
-    def _run_sql(self, question: str) -> str:
+    def _run_sql(self, question: str) -> SqlOutcome:
         try:
             out = self.sql_pipeline.run(question)
             df = out["result"]
+            sql = out.get("sql")
             if df is None or df.empty:
-                return "Query returned no rows."
-            return df.to_string(index=False)
+                return SqlOutcome(text="Query returned no rows.", df=df, sql=sql)
+            # `.text` keeps the exact string the merge prompt used to receive;
+            # the DataFrame rides along for the UI to chart.
+            return SqlOutcome(text=df.to_string(index=False), df=df, sql=sql)
         except Exception as e:  # bad SQL, missing table, etc.
-            return f"[SQL error] {e}"
+            msg = f"[SQL error] {e}"
+            return SqlOutcome(text=msg, error=msg)
 
-    def _run_rag(self, question: str) -> str:
+    def _run_rag(self, question: str) -> RagOutcome:
         if self.vectorstore is None:
-            return "No industry/company reports are loaded."
+            return RagOutcome(text="No industry/company reports are loaded.")
         try:
-            retriever = create_retriever(self.vectorstore, self.child_docs)
-            chain = build_rag_chain(retriever, chat_history=self.memory.format_history())
-            return chain.invoke(question)
+            docs = self._get_retriever().invoke(question)
+            # Retrieve once, then feed the same documents to the chain. A plain
+            # passthrough slots into build_rag_chain's `retriever | format_docs`
+            # composition, so src/rag/chain.py needs no change.
+            chain = build_rag_chain(
+                RunnableLambda(lambda _: docs),
+                chat_history=self.memory.format_history(),
+            )
+            return RagOutcome(text=chain.invoke(question), docs=docs)
         except Exception as e:
-            return f"[RAG error] {e}"
+            msg = f"[RAG error] {e}"
+            return RagOutcome(text=msg, error=msg)
 
-    async def _run_parallel(self, question: str) -> tuple[str, str]:
+    async def _run_parallel(self, question: str) -> tuple[SqlOutcome, RagOutcome]:
         """Run SQL and RAG concurrently. Wall time ≈ max(sql, rag), not the sum."""
         return await asyncio.gather(
             asyncio.to_thread(self._run_sql, question),
@@ -241,23 +314,44 @@ class RouterAgent:
         self.memory.add_turn(question, report.summary)
         self.store.save_turn(self.session_id, question, report.summary)
 
-    async def run(self, question: str) -> PMReport:
-        route = self.classify(question)
+    async def run(self, question: str,
+                  route: Optional[RouteDecision] = None) -> CopilotTurn:
+        """
+        Answer one question.
+
+        `route` lets a caller that already classified (the dashboard, which
+        labels its spinner with the decision) reuse it instead of paying a
+        second routing call.
+        """
+        if route is None:
+            route = self.classify(question)
         print(f"[Router] Decision: {route.value}")
 
-        sql_result: Optional[str] = None
-        rag_result: Optional[str] = None
+        sql: Optional[SqlOutcome] = None
+        rag: Optional[RagOutcome] = None
 
         if route == RouteDecision.SQL_ONLY:
-            sql_result = await asyncio.to_thread(self._run_sql, question)
+            sql = await asyncio.to_thread(self._run_sql, question)
         elif route == RouteDecision.RAG_ONLY:
-            rag_result = await asyncio.to_thread(self._run_rag, question)
+            rag = await asyncio.to_thread(self._run_rag, question)
         else:  # BOTH
-            sql_result, rag_result = await self._run_parallel(question)
+            sql, rag = await self._run_parallel(question)
 
-        report = self.merge(question, sql_result, rag_result)
+        report = self.merge(
+            question,
+            sql.text if sql else None,
+            rag.text if rag else None,
+        )
         self._remember(question, report)
-        return report
+        return CopilotTurn(
+            report=report,
+            route=route,
+            sql=sql.sql if sql else None,
+            sql_df=sql.df if sql else None,
+            rag_docs=rag.docs if rag else [],
+            sql_error=sql.error if sql else None,
+            rag_error=rag.error if rag else None,
+        )
 
 
 if __name__ == "__main__":
@@ -267,5 +361,5 @@ if __name__ == "__main__":
 
     load_dotenv()
     agent = RouterAgent(glossary_path=GLOSSARY_PATH, db_path=DB_PATH, session_id="router-smoke")
-    report = asyncio.run(agent.run("How does our return rate compare to the industry?"))
-    print(report.model_dump_json(indent=2))
+    turn = asyncio.run(agent.run("How does our return rate compare to the industry?"))
+    print(turn.report.model_dump_json(indent=2))

@@ -14,7 +14,7 @@ CHROMA_COLLECTION = "ecommerce_reports"
 
 # Models
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL_ID    = "Qwen/Qwen2.5-7B-Instruct"
+LLM_MODEL_ID    = "Qwen/Qwen2.5-72B-Instruct"  # 7B variant was retired by HF providers (2026-08)
 
 # Retrieval
 RETRIEVER_K = 5

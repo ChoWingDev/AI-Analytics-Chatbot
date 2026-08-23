@@ -85,7 +85,6 @@ target/
 # IPython
 profile_default/
 ipython_config.py
-config.py
 
 # pyenv
 .python-version
@@ -150,3 +149,11 @@ chroma_db/
 
 # Exclude .db files
 *.db
+
+# Generated evaluation reports
+outputs/*.csv
+src/sql_agent/*.csv
+# Keep the two historical reports from the original database: they are the
+# only record of that dataset's values, not regenerable output.
+!outputs/sql_evaluation_result.csv
+!src/sql_agent/sql_accuracy_report.csv

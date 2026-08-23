@@ -22,6 +22,40 @@ def normalize_df(df):
     return normalized
 
 
+def columns_match(expected, generated, rtol=0.01, atol=0.01):
+    """
+    Compare two normalized frames column by column.
+
+    Numeric columns are compared with a tolerance: an equivalent query may
+    round differently (ROUND(x, 2) versus a raw float) or accumulate a sum in
+    a different order. Text columns are compared exactly, after stripping.
+
+    The previous implementation cast the entire frame to float in one call, so
+    any result containing a text column -- a category name, a date -- raised,
+    was swallowed, and fell through to an exact-equality check. Correct queries
+    differing only in the last decimal place were reported as mismatches.
+    """
+    for col in expected.columns:
+        exp, gen = expected[col], generated[col]
+
+        exp_num = pd.to_numeric(exp, errors="coerce")
+        gen_num = pd.to_numeric(gen, errors="coerce")
+
+        if exp_num.notna().all() and gen_num.notna().all():
+            if not np.allclose(
+                exp_num.to_numpy(dtype=float),
+                gen_num.to_numpy(dtype=float),
+                rtol=rtol,
+                atol=atol,
+            ):
+                return False
+        else:
+            if not exp.astype(str).str.strip().equals(gen.astype(str).str.strip()):
+                return False
+
+    return True
+
+
 def evaluate_sql_result(expected_df, generated_df):
     """
     Compare SQL execution results only.
@@ -41,21 +75,7 @@ def evaluate_sql_result(expected_df, generated_df):
     expected_norm = normalize_df(expected_df)
     generated_norm = normalize_df(generated_df)
 
-    try:
-        if np.allclose(
-            expected_norm.to_numpy().astype(float),
-            generated_norm.to_numpy().astype(float),
-            rtol=0.01,
-            atol=0.01
-        ):
-            return {
-                "passed": True,
-                "reason": "Result matched"
-            }
-    except Exception:
-        pass
-
-    if expected_norm.equals(generated_norm):
+    if columns_match(expected_norm, generated_norm):
         return {
             "passed": True,
             "reason": "Result matched"

@@ -38,7 +38,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 load_dotenv()  # HF_TOKEN
 
-from app.charts import choose_chart
+from app.charts import choose_chart, format_metric
 from src.rag.clarification import is_vague
 from src.router import RouterAgent, RouteDecision
 from src.sql_agent.config import GLOSSARY_PATH, DB_PATH
@@ -70,8 +70,7 @@ def render_chart(df) -> None:
     """Draw the result if its shape supports a chart; otherwise draw nothing."""
     kind, params = choose_chart(df)
     if kind == "metric":
-        value = params["value"]
-        st.metric(params["label"], f"{value:,.2f}" if isinstance(value, float) else value)
+        st.metric(params["label"], format_metric(params["label"], params["value"]))
     elif kind == "line":
         st.line_chart(df.set_index(params["x"])[params["y"]])
     elif kind == "bar":

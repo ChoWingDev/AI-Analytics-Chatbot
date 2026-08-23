@@ -23,6 +23,30 @@ _DATE_NAME = re.compile(r"date|month|day|year|week|quarter", re.IGNORECASE)
 MAX_BAR_ROWS = 25
 """Above this a bar chart is unreadable — the table is the better rendering."""
 
+# Metric keys whose values are fractions of a whole. The glossary names them
+# explicitly (return_rate, conversion_rate), so this reads a stated convention
+# rather than guessing from the value.
+_RATE_NAME = re.compile(r"rate|ratio|share|pct|percent|margin", re.IGNORECASE)
+
+
+def format_metric(label: str, value) -> str:
+    """
+    Render a single metric value for display.
+
+    Two decimals is wrong for rates: return_rate is 0.1001 and rounds to
+    "0.10", which reads as ten-hundredths next to a summary saying 10.01%.
+    Rate-named columns holding a fraction are shown as a percentage; anything
+    else keeps four significant decimals and drops trailing zeros.
+    """
+    if not isinstance(value, float):
+        return f"{value:,}" if isinstance(value, int) else str(value)
+
+    if _RATE_NAME.search(str(label)) and 0 <= value <= 1:
+        return f"{value * 100:.2f}%"
+
+    formatted = f"{value:,.4f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
 
 def _is_date_like(df: pd.DataFrame, col: str) -> bool:
     """True if the column names a time axis or its values parse as dates."""

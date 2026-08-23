@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from app.charts import choose_chart
+from app.charts import choose_chart, format_metric
 
 
 def test_single_number_is_a_metric():
@@ -64,3 +64,23 @@ def test_two_point_time_series_is_not_a_line():
 ])
 def test_ambiguous_shapes_fall_back_to_the_table(df):
     assert choose_chart(df) == (None, {})
+
+
+# ── Metric formatting ────────────────────────────────────────────────────────
+
+def test_a_rate_is_shown_as_a_percentage():
+    # 0.1001 rendered as "0.10" contradicted a summary reading "10.01%".
+    assert format_metric("return_rate", 0.1001) == "10.01%"
+
+
+def test_a_rate_already_in_percent_is_left_alone():
+    assert format_metric("return_rate", 10.01) == "10.01"
+
+
+def test_plain_numbers_keep_their_precision():
+    assert format_metric("aov", 62.4567) == "62.4567"
+    assert format_metric("revenue", 1234.5) == "1,234.5"
+
+
+def test_integers_are_thousands_separated():
+    assert format_metric("active_users", 104700) == "104,700"

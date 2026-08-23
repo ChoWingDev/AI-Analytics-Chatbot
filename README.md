@@ -1,33 +1,33 @@
-# AI Analytics Copilot with Governed Text-to-SQL & Advanced RAG
+# AI Analytics Copilot
 
-An enterprise-style AI analytics copilot prototype designed to bridge the gap between natural business language and technical analytics systems.
+Ask a business question in plain English. The copilot decides whether the answer
+lives in the company database, in a shelf of industry and competitor PDFs, or in
+both, runs those branches, and writes a short report with the SQL and the source
+pages attached.
 
-This project combines:
+It has two halves. Text-to-SQL runs against a business glossary rather than a
+raw schema, so "return rate" means one specific formula on one specific table.
+RAG runs hybrid BM25 and vector search over 12 annual and industry reports, and
+cites document, page, and year for every claim.
 
-* Governed Text-to-SQL generation
-* Business glossary semantic mapping
-* Advanced RAG retrieval
-* SQL evaluation benchmarking
-* Structured analytics marts
-* AI validation pipelines
-
-The system is designed to simulate how modern enterprise AI analytics assistants (e.g., Databricks Genie, Snowflake Cortex Analyst, Microsoft Fabric Copilot, ThoughtSpot Sage) operate in production environments.
+Databricks Genie, Snowflake Cortex Analyst and ThoughtSpot Sage solve the same
+problem commercially. This is a prototype built to understand how, not a
+competitor to them.
 
 ---
 
-# 🎬 Demo
+# Demo
 
 ![The copilot answering "How does our return rate compare to the industry?"](docs/demo.gif)
 
-One question, both branches: the router classifies it as `both`, the SQL branch
-computes the order-level return rate from `mart_order_summary`, the RAG branch
-retrieves the industry figure from the report corpus, and the merge step writes
-the PM report. The generated SQL and the retrieved pages are one click away
-under each answer.
+One question, both branches. The router classifies it as `both`. The SQL branch
+computes the order-level return rate from `mart_order_summary` while the RAG
+branch searches the report corpus, then the merge step writes the report. The
+generated SQL and the retrieved pages sit one click away under each answer.
 
 ---
 
-# 🗺️ System Architecture
+# System architecture
 
 ```text
                     ┌────────────────────────────┐
@@ -63,19 +63,19 @@ under each answer.
                    └───────────────────────────┘
 ```
 
-Shared conversation memory (`src/rag/memory.py`) feeds the classifier, the RAG
-chain, and the merge step, so follow-up questions resolve against earlier turns.
+One shared conversation memory (`src/rag/memory.py`) feeds the classifier, the
+RAG chain, and the merge step, so follow-up questions resolve against earlier
+turns.
 
-A separate evaluation path benchmarks the SQL branch on its own — see
-[SQL Evaluation Framework](#-sql-evaluation-framework).
+A separate path benchmarks the SQL branch on its own. See
+[SQL evaluation framework](#sql-evaluation-framework).
 
 ---
 
-# 🧠 Governed AI Analytics Layer
+# Governed analytics layer
 
-The system integrates a semantic governance layer to improve SQL reliability and reduce hallucinations.
-
-Instead of directly generating SQL from raw database schemas, the pipeline retrieves:
+The pipeline never hands the model a raw schema and hopes. Before generating
+SQL it retrieves:
 
 * KPI definitions
 * approved business logic
@@ -95,21 +95,18 @@ Current implementation includes:
 - prompt construction
 - SQL execution validation
 
-Vector-based document retrieval is implemented and in use: the RAG branch runs
-hybrid BM25 + vector search with RRF fusion over 12 annual and industry report
-PDFs (`src/rag/`), and the router runs it alongside the SQL branch.
+Vector-based document retrieval is implemented and in use. The RAG branch runs
+hybrid BM25 and vector search with RRF fusion over 12 report PDFs (`src/rag/`),
+and the router runs it alongside the SQL branch.
 
-This architecture improves:
-
-* business consistency
-* KPI reliability
-* SQL accuracy
-* hallucination prevention
-* enterprise governance alignment
+The point of all this is narrow and worth stating plainly. The glossary decides
+which table and which formula the model uses, so two people asking the same
+question in different words get the same number. It does not make the glossary
+itself correct.
 
 ---
 
-# 📂 Repository Structure
+# Repository structure
 
 ```text
 AI-Analytics-Chatbot/
@@ -180,13 +177,13 @@ AI-Analytics-Chatbot/
 
 ---
 
-# 🏗️ Data Warehouse & Analytics Marts
+# Data warehouse and analytics marts
 
-The project uses SQLite as the analytical warehouse layer.
+SQLite is the warehouse. Five marts sit on top of the seven base tables so
+metric queries hit one pre-joined table at a known grain instead of
+reconstructing the join every time.
 
-Structured marts were designed to support downstream AI analytics querying and KPI standardization.
-
-## Implemented Analytics Marts
+## Implemented marts
 
 | Mart | Purpose |
 |--------|---------|
@@ -198,25 +195,27 @@ Structured marts were designed to support downstream AI analytics querying and K
 
 ---
 
-# 📊 SQL Evaluation Framework
+# SQL evaluation framework
 
-A custom SQL evaluation framework was developed to benchmark and validate AI-generated SQL queries against predefined business ground truth logic.
+The benchmark runs generated SQL and expected SQL against the same database and
+compares the results, so a query that is worded differently but returns the
+same rows passes.
 
-## Current Evaluation Features
+## What it checks
 
 * Ground truth SQL benchmarking (`src/sql_agent/accuracy_report.py`)
 * Result-based validation: equivalent SQL passes, identical text is not required
-* Shape check, then per-column comparison — numeric with tolerance, text exact
+* Shape check, then per-column comparison. Numeric with tolerance, text exact
 * Pass / fail scoring with execution-error tracing
 * CSV report written to `outputs/`
 * Glossary ↔ live schema consistency checks (`tests/test_glossary_schema.py`)
 
-Semantic business-rule validation was prototyped and removed; it is listed
-under Future Improvements rather than described as working.
+Semantic business-rule validation was prototyped and removed. It is listed
+under future improvements rather than described as working.
 
 ---
 
-# 🔍 Evaluation Pipeline
+# Evaluation pipeline
 
 ```text
 Question
@@ -234,11 +233,11 @@ Pass / Fail Report
 
 ---
 
-# 📈 Benchmark & Ground Truth Testing
+# Benchmark and ground truth
 
-A benchmark dataset was manually created to evaluate Text-to-SQL performance across multiple analytics scenarios.
+I wrote the benchmark cases by hand.
 
-## Coverage Areas
+## Coverage
 
 Five cases in `data/evaluation/test_cases.json`, covering KPI aggregation
 (revenue, AOV), ranking with grouping (top categories), time filtering,
@@ -250,71 +249,37 @@ Each case contains:
 * expected SQL, derived from `config/glossary.json` and tagged with
   `expected_sql_source`
 
-The runner executes the expected and generated SQL against the same database
-and compares results, so it measures whether the pipeline implements the
-glossary — not whether the glossary is business-correct.
+The runner executes expected and generated SQL against the same database and
+compares results. That measures whether the pipeline implements the glossary. It
+says nothing about whether the glossary is business-correct.
 
 ---
 
-# 🛠️ Key Technical Features
+# How the pieces fit
 
-## 1. Governed Text-to-SQL
+**Glossary-governed SQL.** `config/glossary.json` holds the formula, the
+preferred mart, and the business rules for each metric. The retriever pulls the
+two most relevant metrics into the prompt alongside a one-line schema per table
+from SQLite `PRAGMA`. The model picks the table it is told to pick.
 
-Business glossary mappings are injected into prompts to align AI-generated SQL with enterprise KPI definitions.
+**Hybrid document retrieval.** BM25 catches exact strings such as "return rate
+40%", vector search catches paraphrases, and RRF fusion merges the two ranked
+lists at 0.4 and 0.6. Filters for year and document type narrow both layers at
+once, and fall back to the full corpus when nothing matches rather than
+returning an empty result that reads like "no answer exists".
 
----
+**Result-based evaluation.** Generated SQL is judged on the rows it returns, not
+on string similarity to a reference query. Execution errors are traced to the
+failing case.
 
-## 2. Advanced RAG Retrieval
-
-Hybrid retrieval pipelines provide:
-
-* schema context
-* glossary definitions
-* business rules
-* example SQL patterns
-* document intelligence
-
-before SQL generation.
-
----
-
-## 3. SQL Evaluator Engine
-
-AI-generated SQL is validated against predefined ground truth outputs to detect:
-
-* incorrect aggregations
-* missing filters
-* incorrect joins
-* semantic KPI mismatches
-* hallucinated SQL logic
+**A merge step that will say "N/A".** The report prompt forbids numbers that do
+not appear literally in the retrieved material. A failed or empty branch becomes
+"N/A" instead of a plausible invention, and the dashboard shows the failure
+rather than hiding it behind the report.
 
 ---
 
-## 4. Semantic Governance Layer
-
-The system distinguishes between:
-
-* officially defined KPIs
-* inferred metrics
-* ambiguous metrics
-* unsupported business questions
-
-to reduce unreliable analytics generation.
-
----
-
-## 5. Structured Analytics Layer
-
-Analytics marts and KPI standardization were designed to improve:
-
-* SQL consistency
-* query reliability
-* AI prompt quality
-* business semantic alignment
-
----
-
-# 🚀 Getting Started
+# Getting started
 
 ## 1. Requirements
 
@@ -352,7 +317,7 @@ Then fill in:
 | `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (Read scope) | every LLM call |
 | `KAGGLE_USERNAME`, `KAGGLE_KEY` | [kaggle.com/settings/account](https://www.kaggle.com/settings/account) → Create New Token | building the database |
 
-Kaggle credentials are only needed for the download; `build_db.py --csv-dir`
+Kaggle credentials are only needed for the download. `build_db.py --csv-dir`
 accepts CSVs you already have.
 
 ---
@@ -372,7 +337,7 @@ analytics marts. Produces roughly 528 MB at
 ## 5. Run
 
 ```bash
-streamlit run app/dashboard.py   # the dashboard — start here
+streamlit run app/dashboard.py   # start here
 ```
 
 Then open http://localhost:8501. Command-line entry points still work:
@@ -383,13 +348,13 @@ python -m app.app         # SQL-only loop
 python -m src.rag.main    # RAG-only demo
 ```
 
-The first run that touches RAG parses all 12 PDFs and embeds ~105k chunks on
-CPU — around 15 minutes. Results are cached to `data/parsed_docs.pkl` and
-`chroma_db/`, so later runs start in seconds.
+The first run that touches RAG parses all 12 PDFs and embeds about 105k chunks
+on CPU, which takes around 15 minutes. Results are cached to
+`data/parsed_docs.pkl` and `chroma_db/`, so later runs start in seconds.
 
 ---
 
-## 6. Tests and benchmarks
+## 6. Tests and benchmark
 
 ```bash
 pip install -r requirements-dev.txt
@@ -402,169 +367,60 @@ database schema, and skips if the database has not been built.
 
 ---
 
-## ⚠️ A note on the data
+## A note on the data
 
 `scripts/build_db.py` pulls the Kaggle mirror
 `mustafakeser4/looker-ecommerce-bigquery-dataset`. TheLook is synthetic and
-regenerated over time, so each mirror is a different snapshot — **this is not
-the same data the project's original numbers came from.** The same query for
+regenerated over time, so each mirror is a different snapshot. **This is not the
+same data the project's original numbers came from.** The same query for
 January 2021 category revenue returns 4,355.92 for Outerwear & Coats today
 versus 7,506.91 originally, and the difference is not a constant factor.
 
-Any figure quoted in this README, the notebooks, or the debugging log below
-predates the current snapshot. `outputs/sql_evaluation_result.csv` and
+Any figure in the notebooks predates the current snapshot. `outputs/sql_evaluation_result.csv` and
 `src/sql_agent/sql_accuracy_report.csv` are kept in the repo as the record of
 the original dataset's values.
 
-The benchmark in `data/evaluation/test_cases.json` is unaffected: it executes
-expected and generated SQL against the *same* database and compares results,
-so it measures whether the pipeline implements `config/glossary.json` — not
-whether the glossary is business-correct.
+The benchmark in `data/evaluation/test_cases.json` is unaffected. It executes
+expected and generated SQL against the *same* database, so it measures whether
+the pipeline implements `config/glossary.json`, not whether the glossary is
+business-correct.
 
 ---
 
-# 🛠️ Debugging Log — AI Analytics Copilot (Text-to-SQL Pipeline)
+# Current results
 
-## Overview
-
-This document records the key issues encountered and resolved during development of the Text-to-SQL RAG pipeline, including root cause analysis and solutions applied.
-
----
-
-## Issue 1: SQL Generator Ignoring RAG Pipeline
-
-**Symptom**
-The `sql_generator.py` test was passing the raw user question directly to the LLM, bypassing the entire RAG pipeline. The LLM responded with general world knowledge instead of querying the local database.
-
-**Root Cause**
-The `__main__` block in `sql_generator.py` called `generate_sql(question)` directly without first running retrieval and prompt building.
-
-**Solution**
-Wire the full pipeline in the correct order:
-1. `GlossaryRetriever.retrieve(question)` — fetch metrics, schema, time periods
-2. `PromptBuilder.build_prompt(question, retrieval_result)` — build enriched prompt
-3. `SQLGenerator.generate_sql(prompt)` — pass the enriched prompt, not the raw question
-
----
-
-## Issue 2: Deprecated `google.generativeai` Package
-
-**Symptom**
-`FutureWarning` on every run stating that `google.generativeai` is no longer supported.
-
-**Solution**
-Migrate to the new `google.genai` package. The API interface changed significantly:
-
-```python
-# Old
-import google.generativeai as genai
-genai.configure(api_key=KEY)
-model = genai.GenerativeModel("models/gemini-2.5-flash")
-response = model.generate_content(prompt)
-
-# New
-from google import genai
-client = genai.Client(api_key=KEY)
-response = client.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=prompt
-)
-```
-
----
-
-## Issue 3: Inconsistent Query Results Between `mart_product_sales` and Raw Table Join
-
-**Symptom**
-Two queries for the same question ("top 5 product categories by revenue in 202101") returned different numbers depending on whether `mart_product_sales` or a raw `order_items JOIN products` was used.
-
-**Root Cause**
-The two approaches used different date source columns:
-- `mart_product_sales.order_date` = `DATE(orders.created_at)`
-- Raw query used `DATE(order_items.created_at)`
-
-Although these timestamps should theoretically be the same, ~2.46% of `order_items.created_at` records are missing or have slight timestamp differences, causing records to fall into different date buckets after `DATE()` truncation.
-
-**Solution**
-- Standardise on `mart_product_sales` as the single source of truth for product/category revenue queries
-- Added `category_revenue` as a separate glossary metric explicitly pointing to `mart_product_sales`
-- Added business logic rule: *"Date filters must be applied to `order_date` which represents `DATE(orders.created_at)`"*
-
----
-
-## Issue 4: Prompt Too Long — Hitting API Quota
-
-**Symptom**
-Prompts were excessively long due to RAG chunks from `thelook_db_documentation.docx` injecting redundant and irrelevant schema information. This caused rapid exhaustion of the free-tier API quota (20 requests/day).
-
-**Root Cause**
-- `RecursiveCharacterTextSplitter` with `chunk_size=900` was blindly splitting the documentation, causing chunks to mix content from multiple tables
-- Both RAG doc chunks and SQLite PRAGMA were injecting schema information, resulting in duplication
-
-**Solution**
-Replaced the RAG doc approach with a leaner two-source architecture:
-
-| Source | Purpose |
-|---|---|
-| `glossary.json` (structured JSON) | Metric definitions, formulas, business logic, preferred source |
-| SQLite `PRAGMA table_info()` | Exact column list per table, dynamically fetched |
-
-Key changes:
-- Removed `build_schema_documents()` and Word doc embedding entirely
-- Compressed schema injection to a single line per table: `Table mart_product_sales (order_date, category, gross_sales, ...)`
-- Capped metric injection to top 2 most relevant metrics
-- Capped business logic rules to 3 per metric
-
----
-## Final Results
-
-| Metric | Value |
-|---|---|
-| Total Test Cases | 5 |
-| Passed | 4 |
-| Execution Accuracy | **80%** |
-| Remaining Failure | `top 5 product categories by revenue in 202101` — keyword routing fix pending validation |
-
----
-
-## Key Takeaways
-
-> **Glossary quality is the single most important factor in Text-to-SQL accuracy.**
-
-The priority order for context injection is:
-
-1. **Glossary** — controls which table, field, and formula the LLM uses
-2. **Prompt instructions** — enforces constraints and prevents hallucination
-3. **SQLite PRAGMA schema** — validates column existence
-4. **RAG doc** — only needed for edge cases not covered by the glossary
-
-# 📊 Current Evaluation Results
-
-Text-to-SQL benchmark: **5 / 5** cases pass against the current snapshot
+Text-to-SQL benchmark: **5 / 5** against the current snapshot
 (`python -m src.sql_agent.accuracy_report`).
 
-Unit tests: **74 passing** — SQL extraction, result comparison, glossary /
-schema consistency, RAG parsing, rank fusion, retrieval filtering, context
-formatting, and chart selection. They run in CI on every push with no database,
-no vector store, and no API token.
+Unit tests: **85 passing**, covering SQL extraction, result comparison, glossary
+and schema consistency, RAG parsing, rank fusion, retrieval filtering, context
+formatting, chart selection, and the clarification gate. They run in CI on every
+push with no database, no vector store, and no API token.
 
-Read the benchmark number with its caveat: expected SQL is derived from the
-glossary the pipeline also reads, so a passing score means the pipeline
-faithfully implements the glossary. It is a consistency measure, not an
-independent accuracy measure.
+The benchmark number needs its caveat every time it is quoted. Expected SQL comes
+from the same glossary the pipeline reads, so a passing score proves the pipeline
+implements the glossary. It is a consistency measure, not an independent accuracy
+measure.
+
+Getting there was almost entirely glossary work. Every accuracy gain came from
+fixing a metric definition, not from prompt wording or model choice. The largest
+single jump came from pinning category revenue to one mart after two queries for
+the same question disagreed, traced to 2.46% of `order_items.created_at` values
+falling into a different day than `orders.created_at` once `DATE()` truncated
+them.
 
 ---
 
-# ⚖️ What works, and what does not
+# What works, and what does not
 
 **Works**
 
-* End-to-end demo in the browser: routing, parallel SQL + RAG, merged PM report,
+* Working demo in the browser. Routing, parallel SQL and RAG, merged report,
   charts, and the SQL and source pages behind every answer
-* 5/5 on the Text-to-SQL benchmark, 74 unit tests, CI green on push
+* 5/5 on the Text-to-SQL benchmark, 85 unit tests, CI green on push
 * Answers cite source document, page, year, and document type
-* The merge prompt refuses to invent numbers: a failed branch becomes "N/A"
-  rather than a plausible fabrication, and the UI shows the failure
+* The merge prompt refuses to invent numbers. A failed branch becomes "N/A"
+  rather than a plausible fabrication, and the dashboard shows the failure
 
 **Does not work, or is not what it looks like**
 
@@ -572,28 +428,28 @@ independent accuracy measure.
   the same `config/glossary.json` the pipeline reads. It proves the pipeline
   implements the glossary; it cannot detect a glossary that is business-wrong.
 * **The merge step compares metrics without checking their grain.** The return
-  rate here is order-level (10.01% — the share of orders containing a return).
+  rate here is order-level, 10.01%, the share of orders containing a return.
   Published industry return rates are usually unit-level (the share of items
   returned). Nothing in the pipeline knows the difference, so when both numbers
   are present it will label the gap "Above" or "Below average" on a comparison
   that is not like-for-like. Check both grains yourself before believing a
-  status. (When no industry figure is retrieved the report says "N/A" rather
-  than inventing one — that guard works; grain awareness is the missing part.)
+  status. When no industry figure is retrieved the report says "N/A" rather than
+  inventing one, so that guard works. Grain awareness is the missing part.
 * **Three glossary metrics are unaudited.** `aov`, `active_users` and
   `conversion_rate` pass the schema tests, but their business logic has not had
   the review `return_rate` received. `conversion_rate` queries the raw `events`
   table because no funnel mart exists.
 * **Single user.** The dashboard caches one agent per server process and that
   agent holds one conversation memory. Concurrent users would interleave.
-* **Not deployed.** ~898 MB of runtime artifacts (528 MB database, 354 MB
-  Chroma, 17 MB parse cache) and 8-13s per answer make free hosting a poor
-  demo. It runs locally.
-* **Numbers predate the current data snapshot** wherever they appear in the
-  notebooks and the debugging log — see the note on the data above.
+* **Not deployed.** About 898 MB of runtime artifacts, a 528 MB database, 354 MB
+  of Chroma, a 17 MB parse cache, plus 8 to 13 seconds per answer. Free hosting
+  would make a bad demo of it. It runs locally.
+* **Numbers in the notebooks predate the current data snapshot.** See the note
+  on the data above.
 
 ---
 
-# 🚀 Future Improvements
+# Future improvements
 
 * OpenAI function-calling router
 * dynamic schema retrieval
@@ -610,6 +466,6 @@ independent accuracy measure.
 
 ---
 
-# 📜 License
+# License
 
 This project is licensed under the MIT License.

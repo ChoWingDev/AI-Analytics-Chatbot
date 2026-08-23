@@ -15,46 +15,59 @@ The system is designed to simulate how modern enterprise AI analytics assistants
 
 ---
 
+# 🎬 Demo
+
+![The copilot answering "How does our return rate compare to the industry?"](docs/demo.gif)
+
+One question, both branches: the router classifies it as `both`, the SQL branch
+computes the order-level return rate from `mart_order_summary`, the RAG branch
+retrieves the industry figure from the report corpus, and the merge step writes
+the PM report. The generated SQL and the retrieved pages are one click away
+under each answer.
+
+---
+
 # 🗺️ System Architecture
 
 ```text
-              ┌────────────────────────────┐
-              │  User Business Question    │
-              └─────────────┬──────────────┘
-                            │
-                            ▼
-        ┌──────────────────────────────────────┐
-        │ Business Glossary & Semantic Layer  │
-        │ KPI definitions / business rules    │
-        └─────────────┬────────────────────────┘
-                      │
-                      ▼
-        ┌──────────────────────────────────────┐
-        │      RAG Context Retrieval Layer     │
-        │ schema / glossary / marts / examples │
-        └─────────────┬────────────────────────┘
-                      │
-                      ▼
-        ┌──────────────────────────────────────┐
-        │      LLM Text-to-SQL Generator       │
-        └─────────────┬────────────────────────┘
-                      │
-                      ▼
-        ┌──────────────────────────────────────┐
-        │        SQL Execution Engine          │
-        └─────────────┬────────────────────────┘
-                      │
-                      ▼
-        ┌──────────────────────────────────────┐
-        │     SQL Evaluator & Validation       │
-        │ expected vs generated SQL checking   │
-        └─────────────┬────────────────────────┘
-                      │
-                      ▼
-        ┌──────────────────────────────────────┐
-        │      Structured Analytics Output     │
-        └──────────────────────────────────────┘
+                    ┌────────────────────────────┐
+                    │   User Business Question   │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │      classify (LLM)        │
+                    │ sql_only / rag_only / both │
+                    └─────────────┬──────────────┘
+                                  │
+                 ┌────────────────┴────────────────┐
+                 │        (run concurrently)       │
+                 ▼                                 ▼
+   ┌──────────────────────────┐      ┌──────────────────────────┐
+   │   Governed Text-to-SQL   │      │      Advanced RAG        │
+   │ glossary retrieval       │      │ hybrid BM25 + vector     │
+   │ → prompt → LLM → SQL     │      │ → RRF fusion → cited     │
+   │ → SQLite execution       │      │   answer over 12 PDFs    │
+   └────────────┬─────────────┘      └────────────┬─────────────┘
+                │  DataFrame + SQL                │  answer + source chunks
+                └────────────────┬────────────────┘
+                                 ▼
+                   ┌───────────────────────────┐
+                   │    merge (LLM → JSON)     │
+                   │ PM report, no fabrication │
+                   └─────────────┬─────────────┘
+                                 ▼
+                   ┌───────────────────────────┐
+                   │  Streamlit chat + charts  │
+                   │  SQL / data / sources     │
+                   └───────────────────────────┘
 ```
+
+Shared conversation memory (`src/rag/memory.py`) feeds the classifier, the RAG
+chain, and the merge step, so follow-up questions resolve against earlier turns.
+
+A separate evaluation path benchmarks the SQL branch on its own — see
+[SQL Evaluation Framework](#-sql-evaluation-framework).
 
 ---
 
@@ -82,7 +95,9 @@ Current implementation includes:
 - prompt construction
 - SQL execution validation
 
-Advanced vector-based retrieval and document retrieval capabilities are planned in future development phases.
+Vector-based document retrieval is implemented and in use: the RAG branch runs
+hybrid BM25 + vector search with RRF fusion over 12 annual and industry report
+PDFs (`src/rag/`), and the router runs it alongside the SQL branch.
 
 This architecture improves:
 
@@ -100,8 +115,10 @@ This architecture improves:
 AI-Analytics-Chatbot/
 │
 ├── app/
+│   ├── dashboard.py            # Streamlit chat UI (primary entry point)
+│   ├── charts.py               # chart selection for SQL results (pure, tested)
 │   ├── app.py                  # SQL-only CLI loop
-│   └── copilot.py              # unified copilot (router → SQL + RAG → PM report)
+│   └── copilot.py              # unified copilot CLI (router → SQL + RAG → PM report)
 │
 ├── src/
 │   ├── llm.py                  # shared HuggingFace chat + embedding providers
@@ -144,7 +161,13 @@ AI-Analytics-Chatbot/
 ├── tests/
 │   ├── test_extract_sql.py
 │   ├── test_sql_evaluator.py
+│   ├── test_charts.py
+│   ├── test_chain.py           # RAG context formatting / citations
+│   ├── test_rag_parsing.py     # year + doc_type from filenames
+│   ├── test_rag_retrieval.py   # RRF fusion + metadata filtering
 │   └── test_glossary_schema.py # glossary ↔ live schema consistency
+│
+├── .github/workflows/tests.yml # pytest on push and PR
 │
 ├── notebooks/                  # historical exploration (01–05)
 ├── outputs/                    # evaluation reports
@@ -349,6 +372,12 @@ analytics marts. Produces roughly 528 MB at
 ## 5. Run
 
 ```bash
+streamlit run app/dashboard.py   # the dashboard — start here
+```
+
+Then open http://localhost:8501. Command-line entry points still work:
+
+```bash
 python -m app.copilot     # unified copilot: internal KPIs + industry reports
 python -m app.app         # SQL-only loop
 python -m src.rag.main    # RAG-only demo
@@ -514,13 +543,53 @@ The priority order for context injection is:
 Text-to-SQL benchmark: **5 / 5** cases pass against the current snapshot
 (`python -m src.sql_agent.accuracy_report`).
 
-Unit tests: **31 passing** — SQL extraction, result comparison, and glossary /
-schema consistency.
+Unit tests: **74 passing** — SQL extraction, result comparison, glossary /
+schema consistency, RAG parsing, rank fusion, retrieval filtering, context
+formatting, and chart selection. They run in CI on every push with no database,
+no vector store, and no API token.
 
 Read the benchmark number with its caveat: expected SQL is derived from the
 glossary the pipeline also reads, so a passing score means the pipeline
 faithfully implements the glossary. It is a consistency measure, not an
 independent accuracy measure.
+
+---
+
+# ⚖️ What works, and what does not
+
+**Works**
+
+* End-to-end demo in the browser: routing, parallel SQL + RAG, merged PM report,
+  charts, and the SQL and source pages behind every answer
+* 5/5 on the Text-to-SQL benchmark, 74 unit tests, CI green on push
+* Answers cite source document, page, year, and document type
+* The merge prompt refuses to invent numbers: a failed branch becomes "N/A"
+  rather than a plausible fabrication, and the UI shows the failure
+
+**Does not work, or is not what it looks like**
+
+* **The 5/5 benchmark is a consistency measure.** Expected SQL is derived from
+  the same `config/glossary.json` the pipeline reads. It proves the pipeline
+  implements the glossary; it cannot detect a glossary that is business-wrong.
+* **The merge step compares metrics without checking their grain.** The return
+  rate here is order-level (10.01% — the share of orders containing a return).
+  Published industry return rates are usually unit-level (the share of items
+  returned). Nothing in the pipeline knows the difference, so when both numbers
+  are present it will label the gap "Above" or "Below average" on a comparison
+  that is not like-for-like. Check both grains yourself before believing a
+  status. (When no industry figure is retrieved the report says "N/A" rather
+  than inventing one — that guard works; grain awareness is the missing part.)
+* **Three glossary metrics are unaudited.** `aov`, `active_users` and
+  `conversion_rate` pass the schema tests, but their business logic has not had
+  the review `return_rate` received. `conversion_rate` queries the raw `events`
+  table because no funnel mart exists.
+* **Single user.** The dashboard caches one agent per server process and that
+  agent holds one conversation memory. Concurrent users would interleave.
+* **Not deployed.** ~898 MB of runtime artifacts (528 MB database, 354 MB
+  Chroma, 17 MB parse cache) and 8-13s per answer make free hosting a poor
+  demo. It runs locally.
+* **Numbers predate the current data snapshot** wherever they appear in the
+  notebooks and the debugging log — see the note on the data above.
 
 ---
 
@@ -533,9 +602,10 @@ independent accuracy measure.
 * ambiguity detection
 * production SQL sandboxing
 * semantic business-rule validation (prototyped, then removed)
-* Streamlit analytics dashboard
 * automated RAG evaluation
 * LLM-generated SQL benchmarking
+* grain-aware metric comparison in the merge step
+* audit of the remaining glossary metrics
 * hybrid SQL + document reasoning
 
 ---
